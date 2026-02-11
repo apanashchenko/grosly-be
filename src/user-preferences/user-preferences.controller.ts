@@ -12,6 +12,7 @@ import { UserPreferencesResponseDto } from './dto/user-preferences-response.dto'
 import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
 import { CurrentUser } from '../auth/decorators';
 import { User } from '../entities/user.entity';
+import { RequireFeature } from '../subscription/decorators/require-feature.decorator';
 
 @ApiBearerAuth()
 @Controller()
@@ -78,6 +79,7 @@ export class UserPreferencesController {
   }
 
   @Patch('users/me/preferences')
+  @RequireFeature('canUsePreferences')
   @ApiTags('users')
   @ApiOperation({
     summary: 'Update current user preferences',

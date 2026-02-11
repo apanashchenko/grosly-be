@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
@@ -12,7 +13,9 @@ import { CategoriesModule } from './categories/categories.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { UserPreferencesModule } from './user-preferences/user-preferences.module';
+import { SubscriptionModule } from './subscription/subscription.module';
 import { JwtAuthGuard } from './auth/guards';
+import { FeatureGuard, UsageLimitGuard } from './subscription/guards';
 import { createPinoConfig } from './config/pino.config';
 
 @Module({
@@ -30,6 +33,7 @@ import { createPinoConfig } from './config/pino.config';
         limit: 60, // 60 requests
       },
     ]),
+    ScheduleModule.forRoot(),
     DatabaseModule,
     AuthModule,
     UsersModule,
@@ -37,6 +41,7 @@ import { createPinoConfig } from './config/pino.config';
     ShoppingListModule,
     CategoriesModule,
     UserPreferencesModule,
+    SubscriptionModule,
   ],
   controllers: [AppController],
   providers: [
@@ -50,6 +55,16 @@ import { createPinoConfig } from './config/pino.config';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    // Apply subscription feature checks globally (use @RequireFeature() to gate)
+    {
+      provide: APP_GUARD,
+      useClass: FeatureGuard,
+    },
+    // Apply subscription usage limits globally (use @RequireUsageLimit() to gate)
+    {
+      provide: APP_GUARD,
+      useClass: UsageLimitGuard,
     },
   ],
 })

@@ -15,6 +15,9 @@ import {
 } from './dto/suggest-recipe.dto';
 import { CurrentUser } from '../auth/decorators';
 import { User } from '../entities/user.entity';
+import { RequireFeature } from '../subscription/decorators/require-feature.decorator';
+import { RequireUsageLimit } from '../subscription/decorators/require-usage-limit.decorator';
+import { UsageAction } from '../subscription/enums/usage-action.enum';
 
 @ApiTags('recipes')
 @ApiBearerAuth()
@@ -23,6 +26,7 @@ export class RecipesController {
   constructor(private readonly recipesService: RecipesService) {}
 
   @Post('parse')
+  @RequireUsageLimit(UsageAction.RECIPE_PARSE)
   @ApiOperation({
     summary: 'Parse recipe text',
     description:
@@ -49,6 +53,7 @@ export class RecipesController {
   }
 
   @Post('generate')
+  @RequireUsageLimit(UsageAction.RECIPE_GENERATION)
   @ApiOperation({
     summary: 'Generate recipes from user query',
     description:
@@ -74,6 +79,8 @@ export class RecipesController {
   }
 
   @Post('suggest')
+  @RequireFeature('canSuggestRecipes')
+  @RequireUsageLimit(UsageAction.RECIPE_SUGGEST)
   @ApiOperation({
     summary: 'Suggest recipes from available ingredients',
     description:

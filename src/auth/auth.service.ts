@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { OAuth2Client } from 'google-auth-library';
 import * as crypto from 'crypto';
 import { UsersService } from '../users/users.service';
+import { SubscriptionService } from '../subscription/subscription.service';
 import { User } from '../entities/user.entity';
 import { AuthProvider } from './enums/auth-provider.enum';
 import { AuthResponseDto, AuthUserDto } from './dto/auth-response.dto';
@@ -17,6 +18,7 @@ export class AuthService {
 
   constructor(
     private usersService: UsersService,
+    private subscriptionService: SubscriptionService,
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {
@@ -59,6 +61,9 @@ export class AuthService {
         authProvider: AuthProvider.GOOGLE,
         providerId: googleUser.sub,
       });
+
+      // Create trial subscription for new user
+      await this.subscriptionService.createTrialSubscription(user.id);
     }
 
     if (!user.isActive) {

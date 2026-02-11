@@ -23,6 +23,7 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 import { CategoryResponseDto } from './dto/category-response.dto';
 import { CurrentUser } from '../auth/decorators';
 import { User } from '../entities/user.entity';
+import { RequireFeature } from '../subscription/decorators/require-feature.decorator';
 
 @ApiTags('categories')
 @ApiBearerAuth()
@@ -47,6 +48,7 @@ export class CategoriesController {
   }
 
   @Post()
+  @RequireFeature('canUseCustomCategories')
   @ApiOperation({
     summary: 'Create a custom category',
     description: 'Creates a new custom category for the authenticated user.',
