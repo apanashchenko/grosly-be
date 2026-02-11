@@ -11,6 +11,7 @@ import { UserPreferences } from './user-preferences.entity';
 import { ShoppingList } from './shopping-list.entity';
 import { Category } from './category.entity';
 import { Subscription } from './subscription.entity';
+import { Recipe } from './recipe.entity';
 import { AuthProvider } from '../auth/enums/auth-provider.enum';
 
 @Entity('users')
@@ -68,6 +69,9 @@ export class User {
 
   @OneToMany(() => Category, (cat) => cat.user)
   categories: Category[];
+
+  @OneToMany(() => Recipe, (recipe) => recipe.user)
+  recipes: Recipe[];
 
   @OneToOne(() => Subscription, (sub) => sub.user, { nullable: true })
   subscription: Subscription;

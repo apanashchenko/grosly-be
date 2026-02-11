@@ -15,5 +15,6 @@ import { CategoriesModule } from '../categories/categories.module';
   ],
   controllers: [ShoppingListController],
   providers: [ShoppingListService],
+  exports: [ShoppingListService],
 })
 export class ShoppingListModule {}

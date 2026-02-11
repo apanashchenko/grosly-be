@@ -1,4 +1,14 @@
-import { Controller, Post, Body, ValidationPipe } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  ParseUUIDPipe,
+  ValidationPipe,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -13,6 +23,11 @@ import {
   SuggestRecipeDto,
   SuggestRecipeResponseDto,
 } from './dto/suggest-recipe.dto';
+import { SaveRecipeDto, UpdateRecipeDto } from './dto/save-recipe.dto';
+import {
+  RecipeResponseDto,
+  RecipeListItemDto,
+} from './dto/recipe-response.dto';
 import { CurrentUser } from '../auth/decorators';
 import { User } from '../entities/user.entity';
 import { RequireFeature } from '../subscription/decorators/require-feature.decorator';
@@ -24,6 +39,96 @@ import { UsageAction } from '../subscription/enums/usage-action.enum';
 @Controller('recipes')
 export class RecipesController {
   constructor(private readonly recipesService: RecipesService) {}
+
+  // ==================== SAVED RECIPES CRUD ====================
+
+  @Post()
+  @ApiOperation({
+    summary: 'Save a recipe',
+    description:
+      'Saves an AI-generated/parsed/suggested recipe with its original input. Optionally creates a shopping list from the ingredients.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Recipe saved successfully',
+    type: RecipeResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid request' })
+  async saveRecipe(
+    @CurrentUser() user: User,
+    @Body(new ValidationPipe()) dto: SaveRecipeDto,
+  ): Promise<RecipeResponseDto> {
+    return await this.recipesService.saveRecipe(user.id, dto);
+  }
+
+  @Get()
+  @ApiOperation({
+    summary: 'Get all saved recipes',
+    description:
+      "Returns user's saved recipes list (lightweight, without full data)",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of saved recipes',
+    type: [RecipeListItemDto],
+  })
+  async findAll(@CurrentUser() user: User): Promise<RecipeListItemDto[]> {
+    return await this.recipesService.findAllByUser(user.id);
+  }
+
+  @Get(':id')
+  @ApiOperation({
+    summary: 'Get saved recipe by ID',
+    description:
+      'Returns full recipe data including originalInput and AI response data',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Recipe details',
+    type: RecipeResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Recipe not found' })
+  async findOne(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<RecipeResponseDto> {
+    return await this.recipesService.findOne(user.id, id);
+  }
+
+  @Patch(':id')
+  @ApiOperation({
+    summary: 'Update saved recipe',
+    description: 'Updates recipe title',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Recipe updated successfully',
+    type: RecipeResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Recipe not found' })
+  async update(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ValidationPipe()) dto: UpdateRecipeDto,
+  ): Promise<RecipeResponseDto> {
+    return await this.recipesService.update(user.id, id, dto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({
+    summary: 'Delete saved recipe',
+    description: 'Permanently deletes a saved recipe',
+  })
+  @ApiResponse({ status: 200, description: 'Recipe deleted successfully' })
+  @ApiResponse({ status: 404, description: 'Recipe not found' })
+  async delete(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    return await this.recipesService.delete(user.id, id);
+  }
+
+  // ==================== AI RECIPE OPERATIONS ====================
 
   @Post('parse')
   @RequireUsageLimit(UsageAction.RECIPE_PARSE)

@@ -1,7 +1,17 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  Logger,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { AiService } from '../ai/ai.service';
 import { CategoriesService } from '../categories/categories.service';
+import { ShoppingListService } from '../shopping-list/shopping-list.service';
 import { Category } from '../entities/category.entity';
+import { Recipe } from '../entities/recipe.entity';
 import { ParseRecipeDto } from './dto/parse-recipe.dto';
 import { ParseRecipeResponseDto } from './dto/ingredient.dto';
 import { GenerateMealPlanDto, MealPlanResponseDto } from './dto/meal-plan.dto';
@@ -9,6 +19,11 @@ import {
   SuggestRecipeDto,
   SuggestRecipeResponseDto,
 } from './dto/suggest-recipe.dto';
+import { SaveRecipeDto, UpdateRecipeDto } from './dto/save-recipe.dto';
+import {
+  RecipeResponseDto,
+  RecipeListItemDto,
+} from './dto/recipe-response.dto';
 
 @Injectable()
 export class RecipesService {
@@ -21,9 +36,120 @@ export class RecipesService {
   private readonly MIN_DAYS = 1;
 
   constructor(
+    @InjectRepository(Recipe)
+    private readonly recipeRepo: Repository<Recipe>,
     private aiService: AiService,
     private categoriesService: CategoriesService,
+    private shoppingListService: ShoppingListService,
   ) {}
+
+  // ==================== SAVED RECIPES CRUD ====================
+
+  async saveRecipe(
+    userId: string,
+    dto: SaveRecipeDto,
+  ): Promise<RecipeResponseDto> {
+    const title =
+      dto.title || `Recipe ${new Date().toISOString().split('T')[0]}`;
+
+    const recipe = this.recipeRepo.create({
+      title,
+      source: dto.source,
+      text: dto.text,
+      userId,
+    });
+
+    const saved = await this.recipeRepo.save(recipe);
+
+    this.logger.log(
+      { id: saved.id, title: saved.title, source: saved.source },
+      'Recipe saved',
+    );
+
+    let shoppingListId: string | null = null;
+
+    if (dto.isAddToShoppingList && dto.items?.length) {
+      const list = await this.shoppingListService.create(userId, {
+        name: dto.shoppingListName || title,
+        items: dto.items,
+      });
+      shoppingListId = list.id;
+
+      saved.shoppingListId = list.id;
+      await this.recipeRepo.save(saved);
+
+      this.logger.log(
+        { recipeId: saved.id, shoppingListId },
+        'Shopping list created from recipe',
+      );
+    }
+
+    return RecipeResponseDto.fromEntity(saved);
+  }
+
+  async findAllByUser(userId: string): Promise<RecipeListItemDto[]> {
+    const recipes = await this.recipeRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+
+    return recipes.map((r) => RecipeListItemDto.fromEntity(r));
+  }
+
+  async findOne(userId: string, id: string): Promise<RecipeResponseDto> {
+    const recipe = await this.recipeRepo.findOne({ where: { id } });
+
+    if (!recipe) {
+      throw new NotFoundException(`Recipe ${id} not found`);
+    }
+
+    if (recipe.userId !== userId) {
+      throw new ForbiddenException();
+    }
+
+    return RecipeResponseDto.fromEntity(recipe);
+  }
+
+  async update(
+    userId: string,
+    id: string,
+    dto: UpdateRecipeDto,
+  ): Promise<RecipeResponseDto> {
+    const recipe = await this.recipeRepo.findOne({ where: { id } });
+
+    if (!recipe) {
+      throw new NotFoundException(`Recipe ${id} not found`);
+    }
+
+    if (recipe.userId !== userId) {
+      throw new ForbiddenException();
+    }
+
+    recipe.title = dto.title;
+    const saved = await this.recipeRepo.save(recipe);
+
+    this.logger.log({ id: saved.id, title: saved.title }, 'Recipe updated');
+
+    return RecipeResponseDto.fromEntity(saved);
+  }
+
+  async delete(userId: string, id: string): Promise<void> {
+    const recipe = await this.recipeRepo.findOne({ where: { id } });
+
+    if (!recipe) {
+      throw new NotFoundException(`Recipe ${id} not found`);
+    }
+
+    if (recipe.userId !== userId) {
+      throw new ForbiddenException();
+    }
+
+    await this.recipeRepo.remove(recipe);
+
+    this.logger.log({ id }, 'Recipe deleted');
+  }
+
+  // ==================== AI RECIPE OPERATIONS ====================
 
   async parseRecipe(
     parseRecipeDto: ParseRecipeDto,

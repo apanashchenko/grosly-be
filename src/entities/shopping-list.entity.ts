@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { User } from './user.entity';
 import { ShoppingListItem } from './shopping-list-item.entity';
+import { Recipe } from './recipe.entity';
 
 @Entity('shopping_lists')
 export class ShoppingList {
@@ -32,6 +33,9 @@ export class ShoppingList {
     eager: true,
   })
   items: ShoppingListItem[];
+
+  @OneToMany(() => Recipe, (recipe) => recipe.shoppingList)
+  recipes: Recipe[];
 
   @CreateDateColumn()
   createdAt: Date;
