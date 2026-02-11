@@ -43,7 +43,8 @@ export class ShoppingListItemDto {
   quantity: number;
 
   @ApiProperty({
-    description: 'Unit of measurement (empty string allowed for "to taste" items)',
+    description:
+      'Unit of measurement (empty string allowed for "to taste" items)',
     example: 'pcs',
     maxLength: 50,
   })

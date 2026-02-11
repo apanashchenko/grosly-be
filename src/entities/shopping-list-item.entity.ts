@@ -1,8 +1,17 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { ShoppingList } from './shopping-list.entity';
 import { Category } from './category.entity';
+import { User } from './user.entity';
 
 @Entity('shopping_list_items')
+@Index('shopping_list_items_created_by_user_id_idx', ['createdByUserId'])
 export class ShoppingListItem {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -27,6 +36,13 @@ export class ShoppingListItem {
 
   @Column({ type: 'int', default: 0 })
   position: number;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'created_by_user_id' })
+  createdBy: User | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  createdByUserId: string | null;
 
   @ManyToOne(() => ShoppingList, (list) => list.items, { onDelete: 'CASCADE' })
   shoppingList: ShoppingList;

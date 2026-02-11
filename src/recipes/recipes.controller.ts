@@ -15,6 +15,8 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Paginate, Paginated } from 'nestjs-paginate';
+import type { PaginateQuery } from 'nestjs-paginate';
 import { RecipesService } from './recipes.service';
 import { ParseRecipeDto } from './dto/parse-recipe.dto';
 import { ParseRecipeResponseDto } from './dto/ingredient.dto';
@@ -30,6 +32,7 @@ import {
 } from './dto/recipe-response.dto';
 import { CurrentUser } from '../auth/decorators';
 import { User } from '../entities/user.entity';
+import { Recipe } from '../entities/recipe.entity';
 import { RequireFeature } from '../subscription/decorators/require-feature.decorator';
 import { RequireUsageLimit } from '../subscription/decorators/require-usage-limit.decorator';
 import { UsageAction } from '../subscription/enums/usage-action.enum';
@@ -65,15 +68,23 @@ export class RecipesController {
   @ApiOperation({
     summary: 'Get all saved recipes',
     description:
-      "Returns user's saved recipes list (lightweight, without full data)",
+      "Returns user's saved recipes list (lightweight, without full data). Supports cursor-based pagination via limit and cursor query params.",
   })
   @ApiResponse({
     status: 200,
-    description: 'List of saved recipes',
-    type: [RecipeListItemDto],
+    description: 'Paginated list of saved recipes',
   })
-  async findAll(@CurrentUser() user: User): Promise<RecipeListItemDto[]> {
-    return await this.recipesService.findAllByUser(user.id);
+  async findAll(
+    @CurrentUser() user: User,
+    @Paginate() query: PaginateQuery,
+  ): Promise<Paginated<Recipe>> {
+    const result = await this.recipesService.findAllByUser(user.id, query);
+    return {
+      ...result,
+      data: result.data.map((r) =>
+        RecipeListItemDto.fromEntity(r),
+      ) as unknown as Recipe[],
+    };
   }
 
   @Get(':id')

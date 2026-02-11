@@ -19,9 +19,8 @@ import { SubscriptionModule } from '../subscription/subscription.module';
       useFactory: (configService: ConfigService) => ({
         secret: configService.getOrThrow<string>('JWT_SECRET'),
         signOptions: {
-          expiresIn:
-            (configService.get<string>('JWT_EXPIRATION') ||
-              '15m') as `${number}${'s' | 'm' | 'h' | 'd'}`,
+          expiresIn: (configService.get<string>('JWT_EXPIRATION') ||
+            '15m') as `${number}${'s' | 'm' | 'h' | 'd'}`,
         },
       }),
     }),

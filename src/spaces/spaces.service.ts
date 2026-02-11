@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { paginate, Paginated, PaginationType } from 'nestjs-paginate';
+import type { PaginateQuery } from 'nestjs-paginate';
 import { Space } from '../entities/space.entity';
 import { SpaceMember } from '../entities/space-member.entity';
 import { SpaceInvitation } from '../entities/space-invitation.entity';
@@ -54,13 +56,23 @@ export class SpacesService {
     return this.findOne(saved.id, userId);
   }
 
-  async findAllByUser(userId: string): Promise<Space[]> {
-    const members = await this.memberRepo.find({
-      where: { userId },
-      relations: ['space', 'space.members', 'space.members.user'],
-    });
+  async findAllByUser(
+    userId: string,
+    query: PaginateQuery,
+  ): Promise<Paginated<Space>> {
+    const qb = this.spaceRepo
+      .createQueryBuilder('space')
+      .innerJoin('space.members', 'member', 'member.userId = :userId', {
+        userId,
+      })
+      .leftJoinAndSelect('space.members', 'allMembers')
+      .leftJoinAndSelect('allMembers.user', 'user');
 
-    return members.map((member) => member.space);
+    return paginate(query, qb, {
+      sortableColumns: ['createdAt', 'id'],
+      defaultSortBy: [['createdAt', 'DESC']],
+      paginationType: PaginationType.CURSOR,
+    });
   }
 
   async findOne(spaceId: string, userId: string): Promise<Space> {

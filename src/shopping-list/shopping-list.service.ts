@@ -12,6 +12,12 @@ import {
   Repository,
   OptimisticLockVersionMismatchError,
 } from 'typeorm';
+import {
+  paginate,
+  Paginated,
+  PaginateQuery,
+  PaginationType,
+} from 'nestjs-paginate';
 import { ShoppingList } from '../entities/shopping-list.entity';
 import { ShoppingListItem } from '../entities/shopping-list-item.entity';
 import { CreateShoppingListDto } from './dto/create-shopping-list.dto';
@@ -56,6 +62,7 @@ export class ShoppingListService {
           purchased: item.purchased ?? false,
           categoryId: item.categoryId ?? null,
           position: index,
+          createdByUserId: userId,
         }),
       ),
     });
@@ -72,23 +79,21 @@ export class ShoppingListService {
       'Shopping list created',
     );
 
-    return saved;
+    return this.findOne(userId, saved.id, spaceId);
   }
 
   async findAllByUser(
     userId: string,
     spaceId: string | null = null,
-  ): Promise<ShoppingList[]> {
-    if (spaceId) {
-      return this.shoppingListRepo.find({
-        where: { spaceId },
-        order: { createdAt: 'DESC' },
-      });
-    }
-
-    return this.shoppingListRepo.find({
-      where: { userId, spaceId: IsNull() },
-      order: { createdAt: 'DESC' },
+    query: PaginateQuery,
+  ): Promise<Paginated<ShoppingList>> {
+    return paginate(query, this.shoppingListRepo, {
+      sortableColumns: ['createdAt', 'id'],
+      defaultSortBy: [['createdAt', 'DESC']],
+      paginationType: PaginationType.CURSOR,
+      loadEagerRelations: true,
+      relations: ['items', 'items.category', 'items.createdBy'],
+      where: spaceId ? { spaceId } : { userId, spaceId: IsNull() },
     });
   }
 
@@ -97,7 +102,10 @@ export class ShoppingListService {
     id: string,
     spaceId: string | null = null,
   ): Promise<ShoppingList> {
-    const list = await this.shoppingListRepo.findOne({ where: { id } });
+    const list = await this.shoppingListRepo.findOne({
+      where: { id },
+      relations: { items: { createdBy: true } },
+    });
 
     if (!list) {
       throw new NotFoundException(`Shopping list ${id} not found`);
@@ -147,6 +155,7 @@ export class ShoppingListService {
           unit: item.unit,
           purchased: item.purchased ?? false,
           position: index,
+          createdByUserId: userId,
         }),
       );
     }
@@ -166,7 +175,7 @@ export class ShoppingListService {
       'Shopping list updated',
     );
 
-    return saved;
+    return this.findOne(userId, saved.id, spaceId);
   }
 
   async delete(
@@ -201,13 +210,11 @@ export class ShoppingListService {
         purchased: item.purchased ?? false,
         categoryId: item.categoryId ?? null,
         position: maxPosition + 1 + index,
-        shoppingList: { id: list.id },
+        createdByUserId: userId,
       }),
     );
 
-    await this.itemRepo.save(newItems);
-
-    // Bump version on the list
+    list.items.push(...newItems);
     await this.shoppingListRepo.save(list);
 
     this.logger.log(

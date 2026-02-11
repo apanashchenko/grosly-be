@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { paginate, Paginated, PaginationType } from 'nestjs-paginate';
+import type { PaginateQuery } from 'nestjs-paginate';
 import { AiService } from '../ai/ai.service';
 import { CategoriesService } from '../categories/categories.service';
 import { ShoppingListService } from '../shopping-list/shopping-list.service';
@@ -20,10 +22,7 @@ import {
   SuggestRecipeResponseDto,
 } from './dto/suggest-recipe.dto';
 import { SaveRecipeDto, UpdateRecipeDto } from './dto/save-recipe.dto';
-import {
-  RecipeResponseDto,
-  RecipeListItemDto,
-} from './dto/recipe-response.dto';
+import { RecipeResponseDto } from './dto/recipe-response.dto';
 
 @Injectable()
 export class RecipesService {
@@ -87,13 +86,16 @@ export class RecipesService {
     return RecipeResponseDto.fromEntity(saved);
   }
 
-  async findAllByUser(userId: string): Promise<RecipeListItemDto[]> {
-    const recipes = await this.recipeRepo.find({
+  async findAllByUser(
+    userId: string,
+    query: PaginateQuery,
+  ): Promise<Paginated<Recipe>> {
+    return paginate(query, this.recipeRepo, {
+      sortableColumns: ['createdAt', 'id'],
+      defaultSortBy: [['createdAt', 'DESC']],
+      paginationType: PaginationType.CURSOR,
       where: { userId },
-      order: { createdAt: 'DESC' },
     });
-
-    return recipes.map((r) => RecipeListItemDto.fromEntity(r));
   }
 
   async findOne(userId: string, id: string): Promise<RecipeResponseDto> {

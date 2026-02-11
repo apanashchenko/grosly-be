@@ -18,6 +18,8 @@ import {
   ApiBearerAuth,
   ApiHeader,
 } from '@nestjs/swagger';
+import { Paginate, Paginated } from 'nestjs-paginate';
+import type { PaginateQuery } from 'nestjs-paginate';
 import { ShoppingListService } from './shopping-list.service';
 import { CreateShoppingListDto } from './dto/create-shopping-list.dto';
 import { UpdateShoppingListDto } from './dto/update-shopping-list.dto';
@@ -28,6 +30,7 @@ import { ShoppingListResponseDto } from './dto/shopping-list-response.dto';
 import { CurrentUser } from '../auth/decorators';
 import { CurrentSpace } from '../spaces/decorators';
 import { User } from '../entities/user.entity';
+import { ShoppingList } from '../entities/shopping-list.entity';
 
 @ApiTags('shopping-list')
 @ApiBearerAuth()
@@ -46,22 +49,28 @@ export class ShoppingListController {
   @ApiOperation({
     summary: 'Get all shopping lists',
     description:
-      'Returns all shopping lists belonging to the authenticated user (or space if X-Space-Id header is set), ordered by creation date (newest first).',
+      'Returns paginated shopping lists belonging to the authenticated user (or space if X-Space-Id header is set), ordered by creation date (newest first). Supports cursor-based pagination via limit and cursor query params.',
   })
   @ApiResponse({
     status: 200,
-    description: 'List of shopping lists',
-    type: [ShoppingListResponseDto],
+    description: 'Paginated list of shopping lists',
   })
   async findAll(
     @CurrentUser() user: User,
     @CurrentSpace() spaceId: string | null,
-  ): Promise<ShoppingListResponseDto[]> {
-    const lists = await this.shoppingListService.findAllByUser(
+    @Paginate() query: PaginateQuery,
+  ): Promise<Paginated<ShoppingList>> {
+    const result = await this.shoppingListService.findAllByUser(
       user.id,
       spaceId,
+      query,
     );
-    return lists.map((list) => ShoppingListResponseDto.fromEntity(list));
+    return {
+      ...result,
+      data: result.data.map((list) =>
+        ShoppingListResponseDto.fromEntity(list),
+      ) as unknown as ShoppingList[],
+    };
   }
 
   @Post('combine')

@@ -1,6 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ShoppingList } from '../../entities/shopping-list.entity';
 
+class CreatedByInfoDto {
+  @ApiProperty({ example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' })
+  id: string;
+
+  @ApiProperty({ example: 'John Doe' })
+  name: string;
+}
+
 class CategoryInfoDto {
   @ApiProperty({ example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' })
   id: string;
@@ -40,6 +48,13 @@ class ShoppingListItemResponseDto {
 
   @ApiProperty({ description: 'Item position in the list', example: 0 })
   position: number;
+
+  @ApiPropertyOptional({
+    description: 'User who created this item',
+    type: CreatedByInfoDto,
+    nullable: true,
+  })
+  createdBy: CreatedByInfoDto | null;
 }
 
 export class ShoppingListResponseDto {
@@ -115,6 +130,9 @@ export class ShoppingListResponseDto {
             }
           : null,
         position: item.position,
+        createdBy: item.createdBy
+          ? { id: item.createdBy.id, name: item.createdBy.name }
+          : null,
       }));
     dto.createdAt = entity.createdAt.toISOString();
     dto.updatedAt = entity.updatedAt.toISOString();

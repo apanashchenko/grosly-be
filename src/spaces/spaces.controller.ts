@@ -17,6 +17,8 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Paginate, Paginated } from 'nestjs-paginate';
+import type { PaginateQuery } from 'nestjs-paginate';
 import { SpacesService } from './spaces.service';
 import { CreateSpaceDto } from './dto/create-space.dto';
 import { UpdateSpaceDto } from './dto/update-space.dto';
@@ -27,6 +29,7 @@ import { InvitationResponseDto } from './dto/invitation-response.dto';
 import { CurrentUser } from '../auth/decorators';
 import { RequireFeature } from '../subscription/decorators';
 import { User } from '../entities/user.entity';
+import { Space } from '../entities/space.entity';
 
 @ApiTags('spaces')
 @ApiBearerAuth()
@@ -56,16 +59,24 @@ export class SpacesController {
   @Get()
   @ApiOperation({
     summary: "List user's spaces",
-    description: 'Returns all spaces the authenticated user is a member of.',
+    description:
+      'Returns paginated spaces the authenticated user is a member of. Supports cursor-based pagination via limit and cursor query params.',
   })
   @ApiResponse({
     status: 200,
-    description: 'List of spaces',
-    type: [SpaceResponseDto],
+    description: 'Paginated list of spaces',
   })
-  async findAll(@CurrentUser() user: User): Promise<SpaceResponseDto[]> {
-    const spaces = await this.spacesService.findAllByUser(user.id);
-    return spaces.map((space) => SpaceResponseDto.fromEntity(space));
+  async findAll(
+    @CurrentUser() user: User,
+    @Paginate() query: PaginateQuery,
+  ): Promise<Paginated<Space>> {
+    const result = await this.spacesService.findAllByUser(user.id, query);
+    return {
+      ...result,
+      data: result.data.map((space) =>
+        SpaceResponseDto.fromEntity(space),
+      ) as unknown as Space[],
+    };
   }
 
   @Get('invitations/my')
