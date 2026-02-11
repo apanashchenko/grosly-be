@@ -22,6 +22,7 @@ import { CreateShoppingListDto } from './dto/create-shopping-list.dto';
 import { UpdateShoppingListDto } from './dto/update-shopping-list.dto';
 import { AddItemsToShoppingListDto } from './dto/add-items-to-shopping-list.dto';
 import { UpdateShoppingListItemDto } from './dto/update-shopping-list-item.dto';
+import { CombineShoppingListsDto } from './dto/combine-shopping-lists.dto';
 import { ShoppingListResponseDto } from './dto/shopping-list-response.dto';
 import { CurrentUser } from '../auth/decorators';
 import { User } from '../entities/user.entity';
@@ -46,6 +47,33 @@ export class ShoppingListController {
   async findAll(@CurrentUser() user: User): Promise<ShoppingListResponseDto[]> {
     const lists = await this.shoppingListService.findAllByUser(user.id);
     return lists.map((list) => ShoppingListResponseDto.fromEntity(list));
+  }
+
+  @Post('combine')
+  @ApiOperation({
+    summary: 'Combine multiple shopping lists into one',
+    description:
+      'Merges items from multiple shopping lists into a new list. Items with the same name are combined with summed quantities. Original lists are kept unchanged.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Combined shopping list created',
+    type: ShoppingListResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error (less than 2 lists, invalid UUIDs)',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'One or more shopping lists not found',
+  })
+  async combine(
+    @CurrentUser() user: User,
+    @Body(new ValidationPipe()) dto: CombineShoppingListsDto,
+  ): Promise<ShoppingListResponseDto> {
+    const list = await this.shoppingListService.combineLists(user.id, dto);
+    return ShoppingListResponseDto.fromEntity(list);
   }
 
   @Get(':id')

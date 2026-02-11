@@ -5,13 +5,14 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ShoppingList } from '../entities/shopping-list.entity';
 import { ShoppingListItem } from '../entities/shopping-list-item.entity';
 import { CreateShoppingListDto } from './dto/create-shopping-list.dto';
 import { UpdateShoppingListDto } from './dto/update-shopping-list.dto';
 import { AddItemsToShoppingListDto } from './dto/add-items-to-shopping-list.dto';
 import { UpdateShoppingListItemDto } from './dto/update-shopping-list-item.dto';
+import { CombineShoppingListsDto } from './dto/combine-shopping-lists.dto';
 import { AiService } from '../ai/ai.service';
 import { CategoriesService } from '../categories/categories.service';
 
@@ -286,6 +287,74 @@ export class ShoppingListService {
     );
 
     return this.findOne(userId, listId);
+  }
+
+  async combineLists(
+    userId: string,
+    dto: CombineShoppingListsDto,
+  ): Promise<ShoppingList> {
+    const lists = await this.shoppingListRepo.find({
+      where: { id: In(dto.listIds), userId },
+    });
+
+    if (lists.length !== dto.listIds.length) {
+      const foundIds = new Set(lists.map((l) => l.id));
+      const missingIds = dto.listIds.filter((id) => !foundIds.has(id));
+      throw new NotFoundException(
+        `Shopping lists not found: ${missingIds.join(', ')}`,
+      );
+    }
+
+    const allItems = lists.flatMap((list) => list.items);
+
+    const grouped = new Map<
+      string,
+      { quantity: number; unit: string; categoryId: string | null }
+    >();
+
+    for (const item of allItems) {
+      const key = `${item.name.toLowerCase().trim()}::${item.unit.toLowerCase().trim()}`;
+      const existing = grouped.get(key);
+      const qty = Number(item.quantity);
+
+      if (existing) {
+        existing.quantity += qty;
+        if (!existing.categoryId && item.categoryId) {
+          existing.categoryId = item.categoryId;
+        }
+      } else {
+        grouped.set(key, {
+          quantity: qty,
+          unit: item.unit,
+          categoryId: item.categoryId,
+        });
+      }
+    }
+
+    const mergedItems = Array.from(grouped.entries()).map(([key, data]) => ({
+      name: key.split('::')[0],
+      quantity: data.quantity,
+      unit: data.unit,
+      categoryId: data.categoryId ?? undefined,
+    }));
+
+    const list = await this.create(userId, {
+      name: dto.name,
+      items: mergedItems,
+      groupedByCategories: dto.groupedByCategories,
+    });
+
+    this.logger.log(
+      {
+        id: list.id,
+        sourceListIds: dto.listIds,
+        totalItems: allItems.length,
+        mergedItems: mergedItems.length,
+      },
+      'Shopping lists combined',
+    );
+
+    return list;
   }
 
   private findItemInList(list: ShoppingList, itemId: string): ShoppingListItem {

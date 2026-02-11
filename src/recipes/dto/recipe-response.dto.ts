@@ -87,11 +87,19 @@ export class RecipeListItemDto {
   })
   createdAt: string;
 
+  @ApiPropertyOptional({
+    description: 'Linked shopping list ID (null if not linked)',
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    nullable: true,
+  })
+  shoppingListId: string | null;
+
   static fromEntity(entity: Recipe): RecipeListItemDto {
     const dto = new RecipeListItemDto();
     dto.id = entity.id;
     dto.title = entity.title;
     dto.source = entity.source;
+    dto.shoppingListId = entity.shoppingListId ?? null;
     dto.createdAt = entity.createdAt.toISOString();
     return dto;
   }
