@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Grosly - Test Google Auth</title>
+    <script src="https://accounts.google.com/gsi/client" async></script>
+    <style>
+      body {
+        font-family: sans-serif;
+        max-width: 600px;
+        margin: 40px auto;
+        padding: 0 20px;
+      }
+      pre {
+        background: #f4f4f4;
+        padding: 12px;
+        border-radius: 6px;
+        overflow-x: auto;
+        font-size: 13px;
+      }
+      .token {
+        word-break: break-all;
+      }
+      h3 {
+        margin-top: 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Grosly - Google Auth Test</h2>
+    <p>1. Click the Google button below to sign in</p>
+    <p>
+      2. The ID token will appear below — copy it to Swagger or use the
+      auto-test
+    </p>
+
+    <div
+      id="g_id_onload"
+      data-client_id="1011361879802-8kmr188fgatqia0lmdmv3tkdaj6dbdjq.apps.googleusercontent.com"
+      data-callback="handleCredentialResponse"
+      data-auto_prompt="false"
+    ></div>
+    <div class="g_id_signin" data-type="standard" data-size="large"></div>
+
+    <h3>ID Token:</h3>
+    <pre id="token-display">Waiting for sign in...</pre>
+
+    <h3>Backend Response:</h3>
+    <pre id="response-display">-</pre>
+
+    <script>
+      function handleCredentialResponse(response) {
+        const token = response.credential;
+
+        // Show the token
+        document.getElementById('token-display').innerHTML =
+          '<span class="token">' + token + '</span>';
+
+        // Auto-send to backend
+        fetch('http://localhost:3000/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: token }),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            document.getElementById('response-display').textContent =
+              JSON.stringify(data, null, 2);
+          })
+          .catch((err) => {
+            document.getElementById('response-display').textContent =
+              'Error: ' + err.message;
+          });
+      }
+    </script>
+  </body>
+</html>
