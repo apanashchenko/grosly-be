@@ -82,7 +82,8 @@ export class SubscriptionResponseDto {
     plan.id = subscription.plan.id;
     plan.type = subscription.plan.type;
     plan.features = getPlanFeatures(subscription.plan.type);
-    plan.maxRecipeGenerationsPerDay = subscription.plan.maxRecipeGenerationsPerDay;
+    plan.maxRecipeGenerationsPerDay =
+      subscription.plan.maxRecipeGenerationsPerDay;
     plan.maxParseRequestsPerDay = subscription.plan.maxParseRequestsPerDay;
     plan.maxShoppingLists = subscription.plan.maxShoppingLists;
     plan.maxCustomCategories = subscription.plan.maxCustomCategories;
