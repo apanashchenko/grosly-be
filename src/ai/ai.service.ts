@@ -28,6 +28,7 @@ export interface Recipe {
   dishName: string;
   description: string;
   ingredients: RecipeIngredient[];
+  instructions: InstructionStep[];
   cookingTime: number;
 }
 
@@ -238,6 +239,12 @@ Return ONLY valid JSON in the following format:
           }
         }
       ],
+      "instructions": [
+        {
+          "step": number,
+          "text": string
+        }
+      ],
       "cookingTime": number
     }
   ]
@@ -249,6 +256,11 @@ Rules:
 - localized units MUST match the response language and culinary norms
 - quantity MUST be numbers only
 - cookingTime MUST be a number (minutes)
+- instructions MUST be an array of ordered steps starting from 1 (3-10 steps)
+- Each step.text MUST be a concise, clear sentence
+- Do NOT repeat ingredient quantities in instructions
+- Instructions MUST be suitable for home cooking, no professional techniques
+- Instructions MUST describe concrete actions (e.g., cut, fry, boil, mix)
 - Do not use ranges, approximations, or "to taste"
 - Use metric system
 - Return JSON ONLY, without markdown or explanations
@@ -600,9 +612,12 @@ Rules:
         throw new Error(`AI returned unknown itemId: ${mapping.itemId}`);
       }
       if (mapping.categoryId !== null && !categoryIds.has(mapping.categoryId)) {
-        throw new Error(
-          `AI returned unknown categoryId: ${mapping.categoryId}`,
+        this.logger.warn(
+          { categoryId: mapping.categoryId, itemId: mapping.itemId },
+          'AI returned unknown categoryId, resetting to null',
         );
+        mapping.categoryId = null;
+        mapping.confidence = 0;
       }
     }
 

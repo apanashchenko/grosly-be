@@ -94,6 +94,20 @@ export class RecipeIngredientDto {
   unit: UnitDto;
 }
 
+export class InstructionStepDto {
+  @ApiProperty({
+    description: 'Step number',
+    example: 1,
+  })
+  step: number;
+
+  @ApiProperty({
+    description: 'Step instruction text',
+    example: 'Peel and dice the beetroot into small cubes',
+  })
+  text: string;
+}
+
 export class RecipeDto {
   @ApiProperty({
     description: 'Dish name',
@@ -112,6 +126,12 @@ export class RecipeDto {
     type: [RecipeIngredientDto],
   })
   ingredients: RecipeIngredientDto[];
+
+  @ApiProperty({
+    description: 'Step-by-step cooking instructions',
+    type: [InstructionStepDto],
+  })
+  instructions: InstructionStepDto[];
 
   @ApiProperty({
     description: 'Cooking time in minutes',
