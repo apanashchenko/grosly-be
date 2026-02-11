@@ -14,7 +14,9 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { UserPreferencesModule } from './user-preferences/user-preferences.module';
 import { SubscriptionModule } from './subscription/subscription.module';
+import { SpacesModule } from './spaces/spaces.module';
 import { JwtAuthGuard } from './auth/guards';
+import { SpaceMemberGuard } from './spaces/guards';
 import { FeatureGuard, UsageLimitGuard } from './subscription/guards';
 import { createPinoConfig } from './config/pino.config';
 
@@ -42,6 +44,7 @@ import { createPinoConfig } from './config/pino.config';
     CategoriesModule,
     UserPreferencesModule,
     SubscriptionModule,
+    SpacesModule,
   ],
   controllers: [AppController],
   providers: [
@@ -55,6 +58,11 @@ import { createPinoConfig } from './config/pino.config';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    // Validate space membership when X-Space-Id header is present
+    {
+      provide: APP_GUARD,
+      useClass: SpaceMemberGuard,
     },
     // Apply subscription feature checks globally (use @RequireFeature() to gate)
     {

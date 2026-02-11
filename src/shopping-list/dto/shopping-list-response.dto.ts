@@ -55,11 +55,24 @@ export class ShoppingListResponseDto {
   })
   name: string;
 
+  @ApiPropertyOptional({
+    description: 'Space ID (null for personal lists)',
+    example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    nullable: true,
+  })
+  spaceId: string | null;
+
   @ApiProperty({
     description: 'Whether items should be grouped by category on the client',
     example: false,
   })
   groupedByCategories: boolean;
+
+  @ApiProperty({
+    description: 'Version number for optimistic locking',
+    example: 1,
+  })
+  version: number;
 
   @ApiProperty({
     description: 'List of products to buy',
@@ -83,7 +96,9 @@ export class ShoppingListResponseDto {
     const dto = new ShoppingListResponseDto();
     dto.id = entity.id;
     dto.name = entity.name;
+    dto.spaceId = entity.spaceId ?? null;
     dto.groupedByCategories = entity.groupedByCategories;
+    dto.version = entity.version;
     dto.items = (entity.items || [])
       .sort((a, b) => a.position - b.position)
       .map((item) => ({

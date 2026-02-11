@@ -12,6 +12,7 @@ import { ShoppingList } from './shopping-list.entity';
 import { Category } from './category.entity';
 import { Subscription } from './subscription.entity';
 import { Recipe } from './recipe.entity';
+import { SpaceMember } from './space-member.entity';
 import { AuthProvider } from '../auth/enums/auth-provider.enum';
 
 @Entity('users')
@@ -75,4 +76,7 @@ export class User {
 
   @OneToOne(() => Subscription, (sub) => sub.user, { nullable: true })
   subscription: Subscription;
+
+  @OneToMany(() => SpaceMember, (member) => member.user)
+  spaceMembers: SpaceMember[];
 }

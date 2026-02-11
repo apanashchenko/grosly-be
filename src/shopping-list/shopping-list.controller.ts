@@ -16,6 +16,7 @@ import {
   ApiResponse,
   ApiParam,
   ApiBearerAuth,
+  ApiHeader,
 } from '@nestjs/swagger';
 import { ShoppingListService } from './shopping-list.service';
 import { CreateShoppingListDto } from './dto/create-shopping-list.dto';
@@ -25,10 +26,18 @@ import { UpdateShoppingListItemDto } from './dto/update-shopping-list-item.dto';
 import { CombineShoppingListsDto } from './dto/combine-shopping-lists.dto';
 import { ShoppingListResponseDto } from './dto/shopping-list-response.dto';
 import { CurrentUser } from '../auth/decorators';
+import { CurrentSpace } from '../spaces/decorators';
 import { User } from '../entities/user.entity';
 
 @ApiTags('shopping-list')
 @ApiBearerAuth()
+@ApiHeader({
+  name: 'X-Space-Id',
+  required: false,
+  description:
+    'Space UUID. If provided, operates on shopping lists within that space. If omitted, operates on personal lists.',
+  example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+})
 @Controller('shopping-list')
 export class ShoppingListController {
   constructor(private readonly shoppingListService: ShoppingListService) {}
@@ -37,15 +46,21 @@ export class ShoppingListController {
   @ApiOperation({
     summary: 'Get all shopping lists',
     description:
-      'Returns all shopping lists belonging to the authenticated user, ordered by creation date (newest first).',
+      'Returns all shopping lists belonging to the authenticated user (or space if X-Space-Id header is set), ordered by creation date (newest first).',
   })
   @ApiResponse({
     status: 200,
     description: 'List of shopping lists',
     type: [ShoppingListResponseDto],
   })
-  async findAll(@CurrentUser() user: User): Promise<ShoppingListResponseDto[]> {
-    const lists = await this.shoppingListService.findAllByUser(user.id);
+  async findAll(
+    @CurrentUser() user: User,
+    @CurrentSpace() spaceId: string | null,
+  ): Promise<ShoppingListResponseDto[]> {
+    const lists = await this.shoppingListService.findAllByUser(
+      user.id,
+      spaceId,
+    );
     return lists.map((list) => ShoppingListResponseDto.fromEntity(list));
   }
 
@@ -70,9 +85,14 @@ export class ShoppingListController {
   })
   async combine(
     @CurrentUser() user: User,
+    @CurrentSpace() spaceId: string | null,
     @Body(new ValidationPipe()) dto: CombineShoppingListsDto,
   ): Promise<ShoppingListResponseDto> {
-    const list = await this.shoppingListService.combineLists(user.id, dto);
+    const list = await this.shoppingListService.combineLists(
+      user.id,
+      dto,
+      spaceId,
+    );
     return ShoppingListResponseDto.fromEntity(list);
   }
 
@@ -80,7 +100,7 @@ export class ShoppingListController {
   @ApiOperation({
     summary: 'Get a shopping list by ID',
     description:
-      'Returns a single shopping list by its UUID. Only the owner can access it.',
+      'Returns a single shopping list by its UUID. Access is checked based on ownership or space membership.',
   })
   @ApiParam({
     name: 'id',
@@ -95,9 +115,10 @@ export class ShoppingListController {
   @ApiResponse({ status: 404, description: 'Shopping list not found' })
   async findOne(
     @CurrentUser() user: User,
+    @CurrentSpace() spaceId: string | null,
     @Param('id', new ParseUUIDPipe()) id: string,
   ): Promise<ShoppingListResponseDto> {
-    const list = await this.shoppingListService.findOne(user.id, id);
+    const list = await this.shoppingListService.findOne(user.id, id, spaceId);
     return ShoppingListResponseDto.fromEntity(list);
   }
 
@@ -118,9 +139,10 @@ export class ShoppingListController {
   })
   async create(
     @CurrentUser() user: User,
+    @CurrentSpace() spaceId: string | null,
     @Body(new ValidationPipe()) dto: CreateShoppingListDto,
   ): Promise<ShoppingListResponseDto> {
-    const list = await this.shoppingListService.create(user.id, dto);
+    const list = await this.shoppingListService.create(user.id, dto, spaceId);
     return ShoppingListResponseDto.fromEntity(list);
   }
 
@@ -128,7 +150,7 @@ export class ShoppingListController {
   @ApiOperation({
     summary: 'Update a shopping list',
     description:
-      'Updates a shopping list by ID. Only the owner can update it. When items are provided, they fully replace existing items.',
+      'Updates a shopping list by ID. When items are provided, they fully replace existing items. Send version field for optimistic locking.',
   })
   @ApiParam({
     name: 'id',
@@ -145,12 +167,22 @@ export class ShoppingListController {
     description: 'Invalid request or invalid UUID format',
   })
   @ApiResponse({ status: 404, description: 'Shopping list not found' })
+  @ApiResponse({
+    status: 409,
+    description: 'Version conflict — list was modified by another user',
+  })
   async update(
     @CurrentUser() user: User,
+    @CurrentSpace() spaceId: string | null,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body(new ValidationPipe()) dto: UpdateShoppingListDto,
   ): Promise<ShoppingListResponseDto> {
-    const list = await this.shoppingListService.update(user.id, id, dto);
+    const list = await this.shoppingListService.update(
+      user.id,
+      id,
+      dto,
+      spaceId,
+    );
     return ShoppingListResponseDto.fromEntity(list);
   }
 
@@ -158,7 +190,8 @@ export class ShoppingListController {
   @HttpCode(204)
   @ApiOperation({
     summary: 'Delete a shopping list',
-    description: 'Deletes a shopping list by ID. Only the owner can delete it.',
+    description:
+      'Deletes a shopping list by ID. Only the owner can delete personal lists. Any space member can delete space lists.',
   })
   @ApiParam({
     name: 'id',
@@ -172,16 +205,17 @@ export class ShoppingListController {
   @ApiResponse({ status: 404, description: 'Shopping list not found' })
   async delete(
     @CurrentUser() user: User,
+    @CurrentSpace() spaceId: string | null,
     @Param('id', new ParseUUIDPipe()) id: string,
   ): Promise<void> {
-    await this.shoppingListService.delete(user.id, id);
+    await this.shoppingListService.delete(user.id, id, spaceId);
   }
 
   @Post(':listId/items')
   @ApiOperation({
     summary: 'Add items to a shopping list',
     description:
-      'Adds one or more items to an existing shopping list. Only the owner can add items. New items are appended at the end by default.',
+      'Adds one or more items to an existing shopping list. New items are appended at the end by default.',
   })
   @ApiParam({
     name: 'listId',
@@ -197,10 +231,16 @@ export class ShoppingListController {
   @ApiResponse({ status: 404, description: 'Shopping list not found' })
   async addItems(
     @CurrentUser() user: User,
+    @CurrentSpace() spaceId: string | null,
     @Param('listId', new ParseUUIDPipe()) listId: string,
     @Body(new ValidationPipe()) dto: AddItemsToShoppingListDto,
   ): Promise<ShoppingListResponseDto> {
-    const list = await this.shoppingListService.addItems(user.id, listId, dto);
+    const list = await this.shoppingListService.addItems(
+      user.id,
+      listId,
+      dto,
+      spaceId,
+    );
     return ShoppingListResponseDto.fromEntity(list);
   }
 
@@ -208,7 +248,7 @@ export class ShoppingListController {
   @ApiOperation({
     summary: 'Update a shopping list item',
     description:
-      'Partially updates a single item in a shopping list. Only the owner can update items. Only provided fields are changed.',
+      'Partially updates a single item in a shopping list. Only provided fields are changed.',
   })
   @ApiParam({
     name: 'listId',
@@ -229,6 +269,7 @@ export class ShoppingListController {
   @ApiResponse({ status: 404, description: 'Shopping list or item not found' })
   async updateItem(
     @CurrentUser() user: User,
+    @CurrentSpace() spaceId: string | null,
     @Param('listId', new ParseUUIDPipe()) listId: string,
     @Param('itemId', new ParseUUIDPipe()) itemId: string,
     @Body(new ValidationPipe()) dto: UpdateShoppingListItemDto,
@@ -238,6 +279,7 @@ export class ShoppingListController {
       listId,
       itemId,
       dto,
+      spaceId,
     );
     return ShoppingListResponseDto.fromEntity(list);
   }
@@ -262,9 +304,14 @@ export class ShoppingListController {
   @HttpCode(200)
   async smartGroup(
     @CurrentUser() user: User,
+    @CurrentSpace() spaceId: string | null,
     @Param('listId', new ParseUUIDPipe()) listId: string,
   ): Promise<ShoppingListResponseDto> {
-    const list = await this.shoppingListService.smartGroup(user.id, listId);
+    const list = await this.shoppingListService.smartGroup(
+      user.id,
+      listId,
+      spaceId,
+    );
     return ShoppingListResponseDto.fromEntity(list);
   }
 
@@ -272,8 +319,7 @@ export class ShoppingListController {
   @HttpCode(204)
   @ApiOperation({
     summary: 'Remove an item from a shopping list',
-    description:
-      'Removes a single item from a shopping list. Only the owner can remove items.',
+    description: 'Removes a single item from a shopping list.',
   })
   @ApiParam({
     name: 'listId',
@@ -289,9 +335,10 @@ export class ShoppingListController {
   @ApiResponse({ status: 404, description: 'Shopping list or item not found' })
   async removeItem(
     @CurrentUser() user: User,
+    @CurrentSpace() spaceId: string | null,
     @Param('listId', new ParseUUIDPipe()) listId: string,
     @Param('itemId', new ParseUUIDPipe()) itemId: string,
   ): Promise<void> {
-    await this.shoppingListService.removeItem(user.id, listId, itemId);
+    await this.shoppingListService.removeItem(user.id, listId, itemId, spaceId);
   }
 }

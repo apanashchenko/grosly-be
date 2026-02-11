@@ -3,6 +3,7 @@ import {
   IsOptional,
   IsBoolean,
   IsArray,
+  IsInt,
   ArrayMinSize,
   ArrayMaxSize,
   ValidateNested,
@@ -88,4 +89,14 @@ export class UpdateShoppingListDto {
   @ValidateNested({ each: true })
   @Type(() => ItemPositionDto)
   itemPositions?: ItemPositionDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'Current version of the shopping list for optimistic locking. If provided, the update will fail with 409 if the list was modified by another user.',
+    example: 1,
+  })
+  @IsOptional()
+  @IsInt({ message: 'version must be an integer' })
+  @Min(0, { message: 'version cannot be negative' })
+  version?: number;
 }

@@ -3,9 +3,15 @@ import {
   Logger,
   NotFoundException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import {
+  In,
+  IsNull,
+  Repository,
+  OptimisticLockVersionMismatchError,
+} from 'typeorm';
 import { ShoppingList } from '../entities/shopping-list.entity';
 import { ShoppingListItem } from '../entities/shopping-list-item.entity';
 import { CreateShoppingListDto } from './dto/create-shopping-list.dto';
@@ -32,6 +38,7 @@ export class ShoppingListService {
   async create(
     userId: string,
     dto: CreateShoppingListDto,
+    spaceId: string | null = null,
   ): Promise<ShoppingList> {
     const name =
       dto.name || `Shopping list ${new Date().toISOString().split('T')[0]}`;
@@ -39,6 +46,7 @@ export class ShoppingListService {
     const list = this.shoppingListRepo.create({
       name,
       userId,
+      spaceId,
       groupedByCategories: dto.groupedByCategories ?? false,
       items: dto.items.map((item, index) =>
         this.itemRepo.create({
@@ -55,29 +63,54 @@ export class ShoppingListService {
     const saved = await this.shoppingListRepo.save(list);
 
     this.logger.log(
-      { id: saved.id, name: saved.name, itemsCount: saved.items.length },
+      {
+        id: saved.id,
+        name: saved.name,
+        itemsCount: saved.items.length,
+        spaceId,
+      },
       'Shopping list created',
     );
 
     return saved;
   }
 
-  async findAllByUser(userId: string): Promise<ShoppingList[]> {
+  async findAllByUser(
+    userId: string,
+    spaceId: string | null = null,
+  ): Promise<ShoppingList[]> {
+    if (spaceId) {
+      return this.shoppingListRepo.find({
+        where: { spaceId },
+        order: { createdAt: 'DESC' },
+      });
+    }
+
     return this.shoppingListRepo.find({
-      where: { userId },
+      where: { userId, spaceId: IsNull() },
       order: { createdAt: 'DESC' },
     });
   }
 
-  async findOne(userId: string, id: string): Promise<ShoppingList> {
+  async findOne(
+    userId: string,
+    id: string,
+    spaceId: string | null = null,
+  ): Promise<ShoppingList> {
     const list = await this.shoppingListRepo.findOne({ where: { id } });
 
     if (!list) {
       throw new NotFoundException(`Shopping list ${id} not found`);
     }
 
-    if (list.userId !== userId) {
-      throw new ForbiddenException();
+    if (spaceId) {
+      if (list.spaceId !== spaceId) {
+        throw new ForbiddenException();
+      }
+    } else {
+      if (list.userId !== userId || list.spaceId !== null) {
+        throw new ForbiddenException();
+      }
     }
 
     return list;
@@ -87,8 +120,13 @@ export class ShoppingListService {
     userId: string,
     id: string,
     dto: UpdateShoppingListDto,
+    spaceId: string | null = null,
   ): Promise<ShoppingList> {
-    const list = await this.findOne(userId, id);
+    const list = await this.findOne(userId, id, spaceId);
+
+    if (dto.version !== undefined) {
+      this.checkVersion(list, dto.version);
+    }
 
     if (dto.name !== undefined) {
       list.name = dto.name;
@@ -121,7 +159,7 @@ export class ShoppingListService {
       await this.itemRepo.save(list.items);
     }
 
-    const saved = await this.shoppingListRepo.save(list);
+    const saved = await this.saveWithOptimisticLock(list);
 
     this.logger.log(
       { id: saved.id, itemsCount: saved.items.length },
@@ -131,8 +169,12 @@ export class ShoppingListService {
     return saved;
   }
 
-  async delete(userId: string, id: string): Promise<void> {
-    const list = await this.findOne(userId, id);
+  async delete(
+    userId: string,
+    id: string,
+    spaceId: string | null = null,
+  ): Promise<void> {
+    const list = await this.findOne(userId, id, spaceId);
     await this.shoppingListRepo.remove(list);
 
     this.logger.log({ id }, 'Shopping list deleted');
@@ -142,8 +184,9 @@ export class ShoppingListService {
     userId: string,
     listId: string,
     dto: AddItemsToShoppingListDto,
+    spaceId: string | null = null,
   ): Promise<ShoppingList> {
-    const list = await this.findOne(userId, listId);
+    const list = await this.findOne(userId, listId, spaceId);
 
     const maxPosition =
       list.items.length > 0
@@ -164,12 +207,15 @@ export class ShoppingListService {
 
     await this.itemRepo.save(newItems);
 
+    // Bump version on the list
+    await this.shoppingListRepo.save(list);
+
     this.logger.log(
       { listId: list.id, addedCount: newItems.length },
       'Items added to shopping list',
     );
 
-    return this.findOne(userId, listId);
+    return this.findOne(userId, listId, spaceId);
   }
 
   async updateItem(
@@ -177,8 +223,9 @@ export class ShoppingListService {
     listId: string,
     itemId: string,
     dto: UpdateShoppingListItemDto,
+    spaceId: string | null = null,
   ): Promise<ShoppingList> {
-    const list = await this.findOne(userId, listId);
+    const list = await this.findOne(userId, listId, spaceId);
     const item = this.findItemInList(list, itemId);
 
     if (dto.name !== undefined) item.name = dto.name;
@@ -190,29 +237,40 @@ export class ShoppingListService {
 
     await this.itemRepo.save(item);
 
+    // Bump version on the list
+    await this.shoppingListRepo.save(list);
+
     this.logger.log(
       { listId: list.id, itemId: item.id },
       'Shopping list item updated',
     );
 
-    return this.findOne(userId, listId);
+    return this.findOne(userId, listId, spaceId);
   }
 
   async removeItem(
     userId: string,
     listId: string,
     itemId: string,
+    spaceId: string | null = null,
   ): Promise<void> {
-    const list = await this.findOne(userId, listId);
+    const list = await this.findOne(userId, listId, spaceId);
     const item = this.findItemInList(list, itemId);
 
     await this.itemRepo.remove(item);
 
+    // Bump version on the list
+    await this.shoppingListRepo.save(list);
+
     this.logger.log({ listId: list.id, itemId }, 'Shopping list item removed');
   }
 
-  async smartGroup(userId: string, listId: string): Promise<ShoppingList> {
-    const list = await this.findOne(userId, listId);
+  async smartGroup(
+    userId: string,
+    listId: string,
+    spaceId: string | null = null,
+  ): Promise<ShoppingList> {
+    const list = await this.findOne(userId, listId, spaceId);
 
     if (list.items.length === 0) {
       return list;
@@ -286,15 +344,20 @@ export class ShoppingListService {
       'Shopping list smart grouped',
     );
 
-    return this.findOne(userId, listId);
+    return this.findOne(userId, listId, spaceId);
   }
 
   async combineLists(
     userId: string,
     dto: CombineShoppingListsDto,
+    spaceId: string | null = null,
   ): Promise<ShoppingList> {
+    const whereCondition = spaceId
+      ? { id: In(dto.listIds), spaceId }
+      : { id: In(dto.listIds), userId };
+
     const lists = await this.shoppingListRepo.find({
-      where: { id: In(dto.listIds), userId },
+      where: whereCondition,
     });
 
     if (lists.length !== dto.listIds.length) {
@@ -338,11 +401,15 @@ export class ShoppingListService {
       categoryId: data.categoryId ?? undefined,
     }));
 
-    const list = await this.create(userId, {
-      name: dto.name,
-      items: mergedItems,
-      groupedByCategories: dto.groupedByCategories,
-    });
+    const list = await this.create(
+      userId,
+      {
+        name: dto.name,
+        items: mergedItems,
+        groupedByCategories: dto.groupedByCategories,
+      },
+      spaceId,
+    );
 
     this.logger.log(
       {
@@ -365,5 +432,28 @@ export class ShoppingListService {
       );
     }
     return item;
+  }
+
+  private checkVersion(list: ShoppingList, expectedVersion: number): void {
+    if (list.version !== expectedVersion) {
+      throw new ConflictException(
+        'Shopping list was modified by another user. Please refresh and try again.',
+      );
+    }
+  }
+
+  private async saveWithOptimisticLock(
+    list: ShoppingList,
+  ): Promise<ShoppingList> {
+    try {
+      return await this.shoppingListRepo.save(list);
+    } catch (error) {
+      if (error instanceof OptimisticLockVersionMismatchError) {
+        throw new ConflictException(
+          'Shopping list was modified by another user. Please refresh and try again.',
+        );
+      }
+      throw error;
+    }
   }
 }
