@@ -47,6 +47,11 @@ export interface MealPlanAiResponse {
   recipes: Recipe[];
 }
 
+export interface SingleRecipeAiResponse {
+  numberOfPeople: number;
+  recipe: Recipe;
+}
+
 export interface InstructionStep {
   step: number;
   text: string;
@@ -482,6 +487,116 @@ Rules:
           recipesCount: result.recipes.length,
         },
         'Meal plan generated successfully',
+      );
+
+      const ttl = this.configService.get<number>('AI_CACHE_TTL_GENERATE', 3600);
+      try {
+        await this.redis.set(cacheKey, JSON.stringify(result), 'EX', ttl);
+      } catch (error: unknown) {
+        this.logger.warn({ error, cacheKey }, 'Cache SET failed');
+      }
+
+      return result;
+    });
+  }
+
+  async generateSingleRecipe(
+    dishQuery: string,
+    responseLanguage: string = 'uk',
+  ): Promise<SingleRecipeAiResponse> {
+    const cacheKey = generateCacheKey('generate-single', {
+      v: PROMPT_VERSIONS.generate,
+      model: 'gpt-5-mini',
+      query: dishQuery,
+      lang: responseLanguage,
+    });
+
+    try {
+      const raw = await this.redis.get(cacheKey);
+      if (raw) {
+        this.logger.log({ cacheKey }, 'AI cache HIT: generateSingleRecipe');
+        return JSON.parse(raw) as SingleRecipeAiResponse;
+      }
+    } catch (error: unknown) {
+      this.logger.warn(
+        { error, cacheKey },
+        'Cache GET failed, proceeding without cache',
+      );
+    }
+
+    return this.deduplicated(cacheKey, async () => {
+      this.logger.log(
+        { cacheKey, queryLength: dishQuery.length, responseLanguage },
+        'AI cache MISS: generateSingleRecipe',
+      );
+
+      const prompt = `
+User query (can be in any language):
+"${dishQuery}"
+
+Your task:
+1. Understand the user's intent regardless of query language
+2. Determine how many people the dish is for (default: 2 if not specified)
+3. Generate one classic, realistic recipe for the requested dish
+4. Calculate ingredient quantities for the determined number of people
+
+Rules:
+- All human-readable text MUST be in language: "${responseLanguage}"
+- canonical units MUST be consistent (e.g. "g", "ml", "pcs", "tbsp", "tsp")
+- localized units MUST match the response language and culinary norms
+- quantity MUST be numbers only
+- cookingTime MUST be a number (minutes)
+- instructions MUST be an array of ordered steps starting from 1 (3-10 steps)
+- Each step.text MUST be a concise, clear sentence
+- Do NOT repeat ingredient quantities in instructions
+- Instructions MUST be suitable for home cooking, no professional techniques
+- Instructions MUST describe concrete actions (e.g., cut, fry, boil, mix)
+- Do not use ranges, approximations, or "to taste"
+- Use metric system
+`;
+
+      const result = await this.callAndParseJson<SingleRecipeAiResponse>(
+        () =>
+          this.openai.chat.completions.create({
+            model: 'gpt-5-mini',
+            response_format: {
+              type: 'json_schema',
+              json_schema: {
+                name: 'single_recipe',
+                strict: true,
+                schema: {
+                  type: 'object',
+                  properties: {
+                    numberOfPeople: { type: 'number' },
+                    recipe: RECIPE_SCHEMA,
+                  },
+                  required: ['numberOfPeople', 'recipe'],
+                  additionalProperties: false,
+                },
+              },
+            },
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You are a multilingual culinary expert. You generate detailed, realistic recipes. You strictly follow schemas and return valid JSON only.',
+              },
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+          }),
+        'generateSingleRecipe',
+      );
+
+      this.logger.log(
+        {
+          numberOfPeople: result.numberOfPeople,
+          dishName: result.recipe.dishName,
+          ingredientsCount: result.recipe.ingredients.length,
+        },
+        'Single recipe generated successfully',
       );
 
       const ttl = this.configService.get<number>('AI_CACHE_TTL_GENERATE', 3600);

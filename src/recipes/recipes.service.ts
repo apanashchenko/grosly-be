@@ -16,7 +16,12 @@ import { Category } from '../entities/category.entity';
 import { Recipe } from '../entities/recipe.entity';
 import { ParseRecipeDto } from './dto/parse-recipe.dto';
 import { ParseRecipeResponseDto } from './dto/ingredient.dto';
-import { GenerateMealPlanDto, MealPlanResponseDto } from './dto/meal-plan.dto';
+import {
+  GenerateMealPlanDto,
+  GenerateSingleRecipeDto,
+  MealPlanResponseDto,
+  SingleRecipeResponseDto,
+} from './dto/meal-plan.dto';
 import {
   SuggestRecipeDto,
   SuggestRecipeResponseDto,
@@ -198,6 +203,45 @@ export class RecipesService {
           categoryId: cat?.id ?? null,
         };
       }),
+    };
+  }
+
+  async generateSingleRecipe(
+    dto: GenerateSingleRecipeDto,
+  ): Promise<SingleRecipeResponseDto> {
+    this.logger.debug(
+      { query: dto.query, language: dto.language },
+      'Generating single recipe from user query',
+    );
+
+    const aiResponse = await this.aiService.generateSingleRecipe(
+      dto.query,
+      dto.language || 'uk',
+    );
+
+    const { numberOfPeople } = aiResponse;
+    if (numberOfPeople < this.MIN_PEOPLE || numberOfPeople > this.MAX_PEOPLE) {
+      this.logger.warn(
+        { numberOfPeople, min: this.MIN_PEOPLE, max: this.MAX_PEOPLE },
+        'Business constraint violation: numberOfPeople out of range',
+      );
+      throw new BadRequestException(
+        `Number of people must be between ${this.MIN_PEOPLE} and ${this.MAX_PEOPLE}. ` +
+          `Received: ${numberOfPeople}.`,
+      );
+    }
+
+    this.logger.log(
+      {
+        numberOfPeople,
+        dishName: aiResponse.recipe.dishName,
+      },
+      'Single recipe generated successfully',
+    );
+
+    return {
+      numberOfPeople,
+      recipe: aiResponse.recipe,
     };
   }
 

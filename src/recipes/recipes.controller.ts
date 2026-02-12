@@ -20,7 +20,12 @@ import type { PaginateQuery } from 'nestjs-paginate';
 import { RecipesService } from './recipes.service';
 import { ParseRecipeDto } from './dto/parse-recipe.dto';
 import { ParseRecipeResponseDto } from './dto/ingredient.dto';
-import { GenerateMealPlanDto, MealPlanResponseDto } from './dto/meal-plan.dto';
+import {
+  GenerateMealPlanDto,
+  GenerateSingleRecipeDto,
+  MealPlanResponseDto,
+  SingleRecipeResponseDto,
+} from './dto/meal-plan.dto';
 import {
   SuggestRecipeDto,
   SuggestRecipeResponseDto,
@@ -168,12 +173,38 @@ export class RecipesController {
     return this.recipesService.parseRecipe(parseRecipeDto, user.id);
   }
 
-  @Post('generate')
+  @Post('single')
   @RequireUsageLimit(UsageAction.RECIPE_GENERATION)
   @ApiOperation({
-    summary: 'Generate recipes from user query',
+    summary: 'Generate a single recipe from user query',
     description:
-      'Universal endpoint for recipe generation. Accepts arbitrary user query (in any language) and generates recipes with ingredients.',
+      'Generates one recipe for a specific dish. Accepts a dish name or short query (in any language) and returns a recipe with ingredients and instructions.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Recipe successfully generated',
+    type: SingleRecipeResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid request (empty query)',
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error or OpenAI API error',
+  })
+  async generateSingleRecipe(
+    @Body(new ValidationPipe()) dto: GenerateSingleRecipeDto,
+  ): Promise<SingleRecipeResponseDto> {
+    return this.recipesService.generateSingleRecipe(dto);
+  }
+
+  @Post('meal-plan')
+  @RequireUsageLimit(UsageAction.RECIPE_GENERATION)
+  @ApiOperation({
+    summary: 'Generate a meal plan from user query',
+    description:
+      'Generates a multi-day meal plan. Accepts arbitrary user query (in any language) and generates multiple recipes with ingredients.',
   })
   @ApiResponse({
     status: 200,
