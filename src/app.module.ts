@@ -7,6 +7,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
+import { RedisCacheModule } from './cache/cache.module';
 import { RecipesModule } from './recipes/recipes.module';
 import { ShoppingListModule } from './shopping-list/shopping-list.module';
 import { CategoriesModule } from './categories/categories.module';
@@ -37,6 +38,7 @@ import { createPinoConfig } from './config/pino.config';
     ]),
     ScheduleModule.forRoot(),
     DatabaseModule,
+    RedisCacheModule,
     AuthModule,
     UsersModule,
     RecipesModule,
