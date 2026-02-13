@@ -2,4 +2,6 @@ export enum RecipeSource {
   PARSED = 'PARSED',
   GENERATED = 'GENERATED',
   SUGGESTED = 'SUGGESTED',
+  MEAL_PLAN = 'MEAL_PLAN',
+  MANUAL = 'MANUAL',
 }

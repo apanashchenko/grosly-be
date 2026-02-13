@@ -2,16 +2,19 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { UsersModule } from '../users/users.module';
 import { SubscriptionModule } from '../subscription/subscription.module';
+import { SpaceInvitation } from '../entities/space-invitation.entity';
 
 @Module({
   imports: [
     UsersModule,
     SubscriptionModule,
+    TypeOrmModule.forFeature([SpaceInvitation]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

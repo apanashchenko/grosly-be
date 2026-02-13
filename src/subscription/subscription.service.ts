@@ -3,7 +3,6 @@ import {
   Logger,
   NotFoundException,
   ForbiddenException,
-  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
@@ -20,22 +19,17 @@ import {
   PlanFeatures,
 } from './plan-features.config';
 
-const DEFAULT_PLAN_TYPES: PlanType[] = [
-  PlanType.FREE,
-  PlanType.PRO,
-  PlanType.PREMIUM,
-];
-
 const TRIAL_DURATION_DAYS = 14;
 
 const USAGE_ACTION_TO_PLAN_LIMIT: Record<UsageAction, keyof Plan> = {
   [UsageAction.RECIPE_GENERATION]: 'maxRecipeGenerationsPerDay',
   [UsageAction.RECIPE_PARSE]: 'maxParseRequestsPerDay',
   [UsageAction.RECIPE_SUGGEST]: 'maxRecipeGenerationsPerDay', // shares limit with generation
+  [UsageAction.MEAL_PLAN_SAVE]: 'maxRecipeGenerationsPerDay', // shares limit with generation
 };
 
 @Injectable()
-export class SubscriptionService implements OnModuleInit {
+export class SubscriptionService {
   private readonly logger = new Logger(SubscriptionService.name);
 
   constructor(
@@ -48,22 +42,6 @@ export class SubscriptionService implements OnModuleInit {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
   ) {}
-
-  async onModuleInit() {
-    await this.seedPlans();
-  }
-
-  private async seedPlans() {
-    for (const planType of DEFAULT_PLAN_TYPES) {
-      const existing = await this.planRepo.findOne({
-        where: { type: planType },
-      });
-      if (!existing) {
-        await this.planRepo.save(this.planRepo.create({ type: planType }));
-        this.logger.log(`Seeded plan: ${planType}`);
-      }
-    }
-  }
 
   async getPlanByType(type: PlanType): Promise<Plan> {
     const plan = await this.planRepo.findOne({ where: { type } });

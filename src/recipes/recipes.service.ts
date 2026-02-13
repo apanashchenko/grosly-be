@@ -104,7 +104,10 @@ export class RecipesService {
   }
 
   async findOne(userId: string, id: string): Promise<RecipeResponseDto> {
-    const recipe = await this.recipeRepo.findOne({ where: { id } });
+    const recipe = await this.recipeRepo.findOne({
+      where: { id },
+      relations: ['mealPlanRecipes', 'mealPlanRecipes.mealPlan'],
+    });
 
     if (!recipe) {
       throw new NotFoundException(`Recipe ${id} not found`);
@@ -132,7 +135,8 @@ export class RecipesService {
       throw new ForbiddenException();
     }
 
-    recipe.title = dto.title;
+    if (dto.title !== undefined) recipe.title = dto.title;
+    if (dto.text !== undefined) recipe.text = dto.text;
     const saved = await this.recipeRepo.save(recipe);
 
     this.logger.log({ id: saved.id, title: saved.title }, 'Recipe updated');

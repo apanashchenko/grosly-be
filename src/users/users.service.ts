@@ -10,6 +10,7 @@ export interface CreateUserFromOAuthParams {
   avatarUrl: string;
   authProvider: AuthProvider;
   providerId: string;
+  language: string;
 }
 
 @Injectable()
@@ -45,6 +46,7 @@ export class UsersService {
       avatarUrl: params.avatarUrl,
       authProvider: params.authProvider,
       providerId: params.providerId,
+      language: params.language === 'ru' ? 'uk' : params.language,
       lastLoginAt: new Date(),
     });
 

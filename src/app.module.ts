@@ -16,6 +16,7 @@ import { UsersModule } from './users/users.module';
 import { UserPreferencesModule } from './user-preferences/user-preferences.module';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { SpacesModule } from './spaces/spaces.module';
+import { MealPlansModule } from './meal-plans/meal-plans.module';
 import { JwtAuthGuard } from './auth/guards';
 import { SpaceMemberGuard } from './spaces/guards';
 import { FeatureGuard, UsageLimitGuard } from './subscription/guards';
@@ -47,6 +48,7 @@ import { createPinoConfig } from './config/pino.config';
     UserPreferencesModule,
     SubscriptionModule,
     SpacesModule,
+    MealPlansModule,
   ],
   controllers: [AppController],
   providers: [

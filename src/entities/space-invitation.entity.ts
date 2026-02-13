@@ -14,6 +14,7 @@ import { InvitationStatus } from '../spaces/enums/invitation-status.enum';
 @Entity('space_invitations')
 @Index('space_invitations_space_id_status_idx', ['spaceId', 'status'])
 @Index('space_invitations_invitee_id_status_idx', ['inviteeId', 'status'])
+@Index('space_invitations_email_status_idx', ['email', 'status'])
 export class SpaceInvitation {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -30,11 +31,14 @@ export class SpaceInvitation {
   @Column()
   inviterId: string;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
-  invitee: User;
+  @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
+  invitee: User | null;
+
+  @Column({ nullable: true })
+  inviteeId: string | null;
 
   @Column()
-  inviteeId: string;
+  email: string;
 
   @Column({
     type: 'enum',

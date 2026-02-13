@@ -26,6 +26,7 @@ import { InviteMemberDto } from './dto/invite-member.dto';
 import { RespondInvitationDto } from './dto/respond-invitation.dto';
 import { SpaceResponseDto } from './dto/space-response.dto';
 import { InvitationResponseDto } from './dto/invitation-response.dto';
+import { SpaceInvitationResponseDto } from './dto/space-invitation-response.dto';
 import { CurrentUser } from '../auth/decorators';
 import { RequireFeature } from '../subscription/decorators';
 import { User } from '../entities/user.entity';
@@ -116,6 +117,36 @@ export class SpacesController {
     @Body(new ValidationPipe()) dto: RespondInvitationDto,
   ): Promise<void> {
     await this.spacesService.respondToInvitation(id, user.id, dto);
+  }
+
+  @Get(':id/invitations')
+  @RequireFeature('canShareLists')
+  @ApiOperation({
+    summary: 'Get pending invitations for a space',
+    description:
+      'Returns all pending invitations for the space. Only the OWNER can view.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Space UUID',
+    example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of pending invitations',
+    type: [SpaceInvitationResponseDto],
+  })
+  @ApiResponse({ status: 403, description: 'Not the space owner' })
+  @ApiResponse({ status: 404, description: 'Space not found' })
+  async getSpaceInvitations(
+    @CurrentUser() user: User,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<SpaceInvitationResponseDto[]> {
+    const invitations = await this.spacesService.getSpaceInvitations(
+      id,
+      user.id,
+    );
+    return invitations.map((inv) => SpaceInvitationResponseDto.fromEntity(inv));
   }
 
   @Get(':id')
@@ -214,6 +245,35 @@ export class SpacesController {
     @Body(new ValidationPipe()) dto: InviteMemberDto,
   ): Promise<void> {
     await this.spacesService.inviteMember(id, user.id, dto);
+  }
+
+  @Delete(':id/invitations/:invitationId')
+  @RequireFeature('canShareLists')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Cancel a space invitation',
+    description:
+      'Cancels (deletes) an invitation. Only the OWNER can cancel invitations.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Space UUID',
+    example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+  })
+  @ApiParam({
+    name: 'invitationId',
+    description: 'Invitation UUID',
+    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  })
+  @ApiResponse({ status: 204, description: 'Invitation cancelled' })
+  @ApiResponse({ status: 403, description: 'Not the space owner' })
+  @ApiResponse({ status: 404, description: 'Invitation not found' })
+  async cancelInvitation(
+    @CurrentUser() user: User,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('invitationId', new ParseUUIDPipe()) invitationId: string,
+  ): Promise<void> {
+    await this.spacesService.cancelInvitation(id, user.id, invitationId);
   }
 
   @Delete(':id/members/:userId')

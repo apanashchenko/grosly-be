@@ -11,30 +11,29 @@ import {
 import { User } from './user.entity';
 import { ShoppingList } from './shopping-list.entity';
 import { MealPlanRecipe } from './meal-plan-recipe.entity';
-import { RecipeSource } from '../recipes/enums/recipe-source.enum';
 
-@Entity('recipes')
-export class Recipe {
+@Entity('meal_plans')
+export class MealPlan {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
-  title: string;
+  @Column({ length: 200 })
+  name: string;
 
-  @Column({ type: 'enum', enum: RecipeSource })
-  source: RecipeSource;
+  @Column({ type: 'int', default: 1 })
+  numberOfDays: number;
 
-  @Column({ type: 'text' })
-  text: string;
+  @Column({ type: 'int', default: 1 })
+  numberOfPeople: number;
 
-  @ManyToOne(() => User, (user) => user.recipes, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, (user) => user.mealPlans, { onDelete: 'CASCADE' })
   user: User;
 
-  @Index('recipes_userid_idx')
+  @Index('meal_plans_user_id_idx')
   @Column()
   userId: string;
 
-  @ManyToOne(() => ShoppingList, (list) => list.recipes, {
+  @ManyToOne(() => ShoppingList, {
     nullable: true,
     onDelete: 'SET NULL',
   })
@@ -43,11 +42,13 @@ export class Recipe {
   @Column({ type: 'uuid', nullable: true })
   shoppingListId: string | null;
 
+  @OneToMany(() => MealPlanRecipe, (mpr) => mpr.mealPlan, {
+    eager: true,
+  })
+  mealPlanRecipes: MealPlanRecipe[];
+
   @CreateDateColumn()
   createdAt: Date;
-
-  @OneToMany(() => MealPlanRecipe, (mpr) => mpr.recipe)
-  mealPlanRecipes: MealPlanRecipe[];
 
   @UpdateDateColumn()
   updatedAt: Date;

@@ -139,41 +139,44 @@ export class SpacesService {
     const space = await this.findOne(spaceId, inviterId);
     this.assertOwner(space, inviterId);
 
-    // Look up invitee by email — silent ignore if not found
-    const invitee = await this.usersService.findByEmail(dto.email);
-    if (!invitee) {
-      return;
-    }
+    const email = dto.email.toLowerCase();
 
-    const alreadyMember = space.members.some((m) => m.userId === invitee.id);
-    if (alreadyMember) {
-      throw new BadRequestException(
-        'This user is already a member of the space',
-      );
-    }
-
+    // Check for existing pending invitation by email
     const existingInvitation = await this.invitationRepo.findOne({
       where: {
         spaceId,
-        inviteeId: invitee.id,
+        email,
         status: InvitationStatus.PENDING,
       },
     });
     if (existingInvitation) {
-      throw new BadRequestException('This user has already been invited');
+      throw new BadRequestException('This email has already been invited');
+    }
+
+    // Look up invitee by email
+    const invitee = await this.usersService.findByEmail(email);
+
+    if (invitee) {
+      const alreadyMember = space.members.some((m) => m.userId === invitee.id);
+      if (alreadyMember) {
+        throw new BadRequestException(
+          'This user is already a member of the space',
+        );
+      }
     }
 
     const invitation = this.invitationRepo.create({
       spaceId,
       inviterId,
-      inviteeId: invitee.id,
+      email,
+      inviteeId: invitee?.id ?? null,
       status: InvitationStatus.PENDING,
     });
 
     await this.invitationRepo.save(invitation);
 
     this.logger.log(
-      { spaceId, inviteeId: invitee.id },
+      { spaceId, email, inviteeId: invitee?.id ?? null },
       'Space invitation created',
     );
   }
@@ -213,7 +216,7 @@ export class SpacesService {
         role: SpaceRole.MEMBER,
       });
       await this.memberRepo.save(member);
-      invitation.status = InvitationStatus.ACCEPTED;
+      await this.invitationRepo.remove(invitation);
 
       this.logger.log(
         { spaceId: invitation.spaceId, userId },
@@ -221,14 +224,13 @@ export class SpacesService {
       );
     } else {
       invitation.status = InvitationStatus.DECLINED;
+      await this.invitationRepo.save(invitation);
 
       this.logger.log(
         { spaceId: invitation.spaceId, userId },
         'Space invitation declined',
       );
     }
-
-    await this.invitationRepo.save(invitation);
   }
 
   async removeMember(
@@ -259,6 +261,46 @@ export class SpacesService {
       { spaceId, removedUserId: targetUserId },
       'Space member removed',
     );
+  }
+
+  async cancelInvitation(
+    spaceId: string,
+    userId: string,
+    invitationId: string,
+  ): Promise<void> {
+    const space = await this.findOne(spaceId, userId);
+    this.assertOwner(space, userId);
+
+    const invitation = await this.invitationRepo.findOne({
+      where: { id: invitationId, spaceId },
+    });
+
+    if (!invitation) {
+      throw new NotFoundException(
+        `Invitation ${invitationId} not found in this space`,
+      );
+    }
+
+    await this.invitationRepo.remove(invitation);
+
+    this.logger.log(
+      { spaceId, invitationId },
+      'Space invitation cancelled',
+    );
+  }
+
+  async getSpaceInvitations(
+    spaceId: string,
+    userId: string,
+  ): Promise<SpaceInvitation[]> {
+    const space = await this.findOne(spaceId, userId);
+    this.assertOwner(space, userId);
+
+    return this.invitationRepo.find({
+      where: { spaceId },
+      relations: ['invitee'],
+      order: { createdAt: 'DESC' },
+    });
   }
 
   private assertOwner(space: Space, userId: string): void {

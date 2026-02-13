@@ -1,11 +1,15 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { OAuth2Client } from 'google-auth-library';
 import * as crypto from 'crypto';
 import { UsersService } from '../users/users.service';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { User } from '../entities/user.entity';
+import { SpaceInvitation } from '../entities/space-invitation.entity';
+import { InvitationStatus } from '../spaces/enums/invitation-status.enum';
 import { AuthProvider } from './enums/auth-provider.enum';
 import { AuthResponseDto, AuthUserDto } from './dto/auth-response.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
@@ -21,6 +25,8 @@ export class AuthService {
     private subscriptionService: SubscriptionService,
     private jwtService: JwtService,
     private configService: ConfigService,
+    @InjectRepository(SpaceInvitation)
+    private readonly invitationRepo: Repository<SpaceInvitation>,
   ) {
     this.googleClient = new OAuth2Client(
       this.configService.get<string>('GOOGLE_CLIENT_ID'),
@@ -60,10 +66,14 @@ export class AuthService {
         avatarUrl: googleUser.picture,
         authProvider: AuthProvider.GOOGLE,
         providerId: googleUser.sub,
+        language: googleUser.locale,
       });
 
       // Create trial subscription for new user
       await this.subscriptionService.createTrialSubscription(user.id);
+
+      // Link any pending space invitations sent to this email
+      await this.linkPendingInvitations(user.id, user.email);
     }
 
     if (!user.isActive) {
@@ -142,6 +152,7 @@ export class AuthService {
     email: string;
     name: string;
     picture: string;
+    locale: string;
   }> {
     try {
       const ticket = await this.googleClient.verifyIdToken({
@@ -159,6 +170,7 @@ export class AuthService {
         email: payload.email!,
         name: payload.name || payload.email!,
         picture: payload.picture || '',
+        locale: payload.locale || 'uk',
       };
     } catch (error) {
       if (error instanceof UnauthorizedException) throw error;
@@ -197,6 +209,27 @@ export class AuthService {
   private verifyTokenHash(token: string, hash: string): boolean {
     const tokenHash = this.hashToken(token);
     return crypto.timingSafeEqual(Buffer.from(tokenHash), Buffer.from(hash));
+  }
+
+  private async linkPendingInvitations(
+    userId: string,
+    email: string,
+  ): Promise<void> {
+    const result = await this.invitationRepo.update(
+      {
+        email: email.toLowerCase(),
+        status: InvitationStatus.PENDING,
+        inviteeId: IsNull() as unknown as string,
+      },
+      { inviteeId: userId },
+    );
+
+    if (result.affected && result.affected > 0) {
+      this.logger.log(
+        { userId, email, count: result.affected },
+        'Linked pending invitations to new user',
+      );
+    }
   }
 
   private mapUserToDto(user: User): AuthUserDto {

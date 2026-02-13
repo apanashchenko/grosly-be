@@ -1,4 +1,5 @@
 import {
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -18,6 +19,7 @@ import {
   PaginateQuery,
   PaginationType,
 } from 'nestjs-paginate';
+import Redis from 'ioredis';
 import { ShoppingList } from '../entities/shopping-list.entity';
 import { ShoppingListItem } from '../entities/shopping-list-item.entity';
 import { CreateShoppingListDto } from './dto/create-shopping-list.dto';
@@ -27,6 +29,7 @@ import { UpdateShoppingListItemDto } from './dto/update-shopping-list-item.dto';
 import { CombineShoppingListsDto } from './dto/combine-shopping-lists.dto';
 import { AiService } from '../ai/ai.service';
 import { CategoriesService } from '../categories/categories.service';
+import { REDIS_CLIENT } from '../cache/cache.module';
 
 @Injectable()
 export class ShoppingListService {
@@ -39,6 +42,7 @@ export class ShoppingListService {
     private readonly itemRepo: Repository<ShoppingListItem>,
     private readonly aiService: AiService,
     private readonly categoriesService: CategoriesService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   async create(
@@ -277,81 +281,94 @@ export class ShoppingListService {
     listId: string,
     spaceId: string | null = null,
   ): Promise<ShoppingList> {
-    const list = await this.findOne(userId, listId, spaceId);
+    const lockKey = `smart-group-lock:${listId}`;
+    const locked = await this.redis.set(lockKey, '1', 'EX', 60, 'NX');
 
-    if (list.items.length === 0) {
-      return list;
-    }
-
-    const categories = await this.categoriesService.findAll(userId);
-
-    if (categories.length === 0) {
-      this.logger.warn(
-        { listId },
-        'No categories available for smart grouping',
+    if (!locked) {
+      throw new ConflictException(
+        'Smart grouping is already in progress for this list',
       );
-      return list;
     }
 
-    const itemsForAi = list.items.map((item) => ({
-      id: item.id,
-      name: item.name,
-    }));
+    try {
+      const list = await this.findOne(userId, listId, spaceId);
 
-    const categoriesForAi = categories.map((c) => ({
-      id: c.id,
-      slug: c.slug,
-      name: c.name,
-    }));
-
-    const mappings = await this.aiService.categorizeItems(
-      itemsForAi,
-      categoriesForAi,
-    );
-
-    const categoryIds = new Set(categories.map((c) => c.id));
-
-    const categoriesMap = new Map(categories.map((c) => [c.id, c]));
-    let lowConfidenceCount = 0;
-
-    for (const mapping of mappings) {
-      const item = list.items.find((i) => i.id === mapping.itemId);
-      if (!item) continue;
-
-      if (mapping.confidence < 0.6) {
-        lowConfidenceCount++;
-        item.categoryId = null;
-        item.category = null;
-      } else if (
-        mapping.categoryId === null ||
-        categoryIds.has(mapping.categoryId)
-      ) {
-        item.categoryId = mapping.categoryId;
-        item.category = mapping.categoryId
-          ? (categoriesMap.get(mapping.categoryId) ?? null)
-          : null;
+      if (list.items.length === 0) {
+        return list;
       }
-    }
 
-    await this.itemRepo.save(list.items);
+      const categories = await this.categoriesService.findAll(userId);
 
-    if (lowConfidenceCount > 0) {
-      this.logger.warn(
-        { listId, lowConfidenceCount },
-        'Some items had low confidence and were left uncategorized',
+      if (categories.length === 0) {
+        this.logger.warn(
+          { listId },
+          'No categories available for smart grouping',
+        );
+        return list;
+      }
+
+      const itemsForAi = list.items.map((item) => ({
+        id: item.id,
+        name: item.name,
+      }));
+
+      const categoriesForAi = categories.map((c) => ({
+        id: c.id,
+        slug: c.slug,
+        name: c.name,
+      }));
+
+      const mappings = await this.aiService.categorizeItems(
+        itemsForAi,
+        categoriesForAi,
       );
+
+      const categoryIds = new Set(categories.map((c) => c.id));
+
+      const categoriesMap = new Map(categories.map((c) => [c.id, c]));
+      let lowConfidenceCount = 0;
+
+      for (const mapping of mappings) {
+        const item = list.items.find((i) => i.id === mapping.itemId);
+        if (!item) continue;
+
+        if (mapping.confidence < 0.6) {
+          lowConfidenceCount++;
+          item.categoryId = null;
+          item.category = null;
+        } else if (
+          mapping.categoryId === null ||
+          categoryIds.has(mapping.categoryId)
+        ) {
+          item.categoryId = mapping.categoryId;
+          item.category = mapping.categoryId
+            ? (categoriesMap.get(mapping.categoryId) ?? null)
+            : null;
+        }
+      }
+
+      await this.itemRepo.save(list.items);
+
+      if (lowConfidenceCount > 0) {
+        this.logger.warn(
+          { listId, lowConfidenceCount },
+          'Some items had low confidence and were left uncategorized',
+        );
+      }
+
+      await this.shoppingListRepo.update(listId, {
+        groupedByCategories: true,
+      });
+
+      this.logger.log(
+        { listId, itemsGrouped: mappings.length },
+        'Shopping list smart grouped',
+      );
+
+      return this.findOne(userId, listId, spaceId);
+    } finally {
+      await this.redis.del(lockKey);
     }
-
-    await this.shoppingListRepo.update(listId, {
-      groupedByCategories: true,
-    });
-
-    this.logger.log(
-      { listId, itemsGrouped: mappings.length },
-      'Shopping list smart grouped',
-    );
-
-    return this.findOne(userId, listId, spaceId);
   }
 
   async combineLists(

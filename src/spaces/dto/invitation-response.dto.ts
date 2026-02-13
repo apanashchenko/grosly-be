@@ -15,6 +15,9 @@ export class InvitationResponseDto {
   @ApiProperty({ example: 'John Doe' })
   inviterName: string;
 
+  @ApiProperty({ example: 'https://lh3.googleusercontent.com/a/example', nullable: true })
+  inviterAvatarUrl: string | null;
+
   @ApiProperty({ enum: InvitationStatus })
   status: InvitationStatus;
 
@@ -27,6 +30,7 @@ export class InvitationResponseDto {
     dto.spaceId = entity.spaceId;
     dto.spaceName = entity.space?.name ?? '';
     dto.inviterName = entity.inviter?.name ?? '';
+    dto.inviterAvatarUrl = entity.inviter?.avatarUrl ?? null;
     dto.status = entity.status;
     dto.createdAt = entity.createdAt.toISOString();
     return dto;

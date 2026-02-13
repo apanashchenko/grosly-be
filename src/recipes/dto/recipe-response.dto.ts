@@ -48,6 +48,12 @@ export class RecipeResponseDto {
   })
   shoppingListId: string | null;
 
+  @ApiProperty({
+    description: 'Meal plans that include this recipe',
+    type: () => [RecipeMealPlanDto],
+  })
+  mealPlans: RecipeMealPlanDto[];
+
   static fromEntity(entity: Recipe): RecipeResponseDto {
     const dto = new RecipeResponseDto();
     dto.id = entity.id;
@@ -57,8 +63,26 @@ export class RecipeResponseDto {
     dto.shoppingListId = entity.shoppingListId ?? null;
     dto.createdAt = entity.createdAt.toISOString();
     dto.updatedAt = entity.updatedAt.toISOString();
+    dto.mealPlans = (entity.mealPlanRecipes ?? []).map((mpr) => ({
+      id: mpr.mealPlan.id,
+      name: mpr.mealPlan.name,
+    }));
     return dto;
   }
+}
+
+export class RecipeMealPlanDto {
+  @ApiProperty({
+    description: 'Meal plan ID',
+    example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+  })
+  id: string;
+
+  @ApiProperty({
+    description: 'Meal plan name',
+    example: 'Weekly dinner plan',
+  })
+  name: string;
 }
 
 export class RecipeListItemDto {

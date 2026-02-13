@@ -90,16 +90,32 @@ export class SaveRecipeDto {
 }
 
 export class UpdateRecipeDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'New recipe title',
     example: 'My Borscht Recipe',
     maxLength: 300,
   })
+  @IsOptional()
   @Transform(({ value }: { value: string }) =>
     value?.trim()?.replace(/<[^>]*>/g, ''),
   )
   @IsString()
   @IsNotEmpty()
   @MaxLength(300)
-  title: string;
+  title?: string;
+
+  @ApiPropertyOptional({
+    description: 'Updated recipe text content',
+    example:
+      'Borscht\n\nIngredients:\n- beetroot 2 pcs\n- potatoes 3 pcs\n\nInstructions:\n1. Peel and dice beetroot...',
+    maxLength: 3000,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: string }) =>
+    value?.trim()?.replace(/<[^>]*>/g, ''),
+  )
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(3000)
+  text?: string;
 }
