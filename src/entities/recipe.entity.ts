@@ -9,8 +9,8 @@ import {
   Index,
 } from 'typeorm';
 import { User } from './user.entity';
-import { ShoppingList } from './shopping-list.entity';
 import { MealPlanRecipe } from './meal-plan-recipe.entity';
+import { RecipeIngredient } from './recipe-ingredient.entity';
 import { RecipeSource } from '../recipes/enums/recipe-source.enum';
 
 @Entity('recipes')
@@ -34,14 +34,11 @@ export class Recipe {
   @Column()
   userId: string;
 
-  @ManyToOne(() => ShoppingList, (list) => list.recipes, {
-    nullable: true,
-    onDelete: 'SET NULL',
+  @OneToMany(() => RecipeIngredient, (ing) => ing.recipe, {
+    cascade: true,
+    eager: true,
   })
-  shoppingList: ShoppingList | null;
-
-  @Column({ type: 'uuid', nullable: true })
-  shoppingListId: string | null;
+  ingredients: RecipeIngredient[];
 
   @CreateDateColumn()
   createdAt: Date;

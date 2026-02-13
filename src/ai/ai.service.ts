@@ -25,6 +25,7 @@ export interface RecipeIngredient {
   name: string;
   quantity: number;
   unit: Unit;
+  categorySlug: string | null;
 }
 
 export interface Recipe {
@@ -44,6 +45,7 @@ export interface ParsedRequest {
 
 export interface MealPlanAiResponse {
   parsedRequest: ParsedRequest;
+  description: string;
   recipes: Recipe[];
 }
 
@@ -110,8 +112,9 @@ const RECIPE_INGREDIENT_SCHEMA = {
     name: { type: 'string' },
     quantity: { type: 'number' },
     unit: UNIT_SCHEMA,
+    categorySlug: { type: ['string', 'null'] },
   },
-  required: ['name', 'quantity', 'unit'],
+  required: ['name', 'quantity', 'unit', 'categorySlug'],
   additionalProperties: false,
 } as const;
 
@@ -368,12 +371,14 @@ ${categories.length > 0 ? '- categorySlug MUST be one of the provided category s
   async generateMealPlanFromUserQuery(
     userQuery: string,
     responseLanguage: string = 'uk',
+    categories: { slug: string; name: string }[] = [],
   ): Promise<MealPlanAiResponse> {
     const cacheKey = generateCacheKey('generate', {
       v: PROMPT_VERSIONS.generate,
       model: 'gpt-5-mini',
       query: userQuery,
       lang: responseLanguage,
+      categories,
     });
 
     try {
@@ -395,10 +400,15 @@ ${categories.length > 0 ? '- categorySlug MUST be one of the provided category s
         'AI cache MISS: generateMealPlanFromUserQuery',
       );
 
+      const categoryBlock =
+        categories.length > 0
+          ? `\nAvailable product categories:\n${categories.map((c) => `- "${c.slug}" (${c.name})`).join('\n')}\n`
+          : '';
+
       const prompt = `
 User query (can be in any language):
 "${userQuery}"
-
+${categoryBlock}
 Your task:
 1. Understand the user's intent regardless of query language
 2. Determine:
@@ -406,8 +416,10 @@ Your task:
    - number of days
    - dietary restrictions
    - meal type (if specified)
-3. Generate classic, realistic recipes
-4. Calculate ingredient quantities per recipe
+3. Write a short description (1-2 sentences) summarizing the meal plan theme/goal
+4. Generate classic, realistic recipes
+5. Calculate ingredient quantities per recipe
+${categories.length > 0 ? '6. Assign the most appropriate category to each ingredient from the provided list' : ''}
 
 Rules:
 - All human-readable text MUST be in language: "${responseLanguage}"
@@ -422,6 +434,7 @@ Rules:
 - Instructions MUST describe concrete actions (e.g., cut, fry, boil, mix)
 - Do not use ranges, approximations, or "to taste"
 - Use metric system
+${categories.length > 0 ? '- categorySlug MUST be one of the provided category slugs, or null if no category fits' : '- categorySlug MUST be null (no categories provided)'}
 `;
 
       const result = await this.callAndParseJson<MealPlanAiResponse>(
@@ -455,12 +468,17 @@ Rules:
                       ],
                       additionalProperties: false,
                     },
+                    description: {
+                      type: 'string',
+                      description:
+                        'Short summary of the meal plan theme/goal (1-2 sentences)',
+                    },
                     recipes: {
                       type: 'array',
                       items: RECIPE_SCHEMA,
                     },
                   },
-                  required: ['parsedRequest', 'recipes'],
+                  required: ['parsedRequest', 'description', 'recipes'],
                   additionalProperties: false,
                 },
               },
@@ -503,12 +521,14 @@ Rules:
   async generateSingleRecipe(
     dishQuery: string,
     responseLanguage: string = 'uk',
+    categories: { slug: string; name: string }[] = [],
   ): Promise<SingleRecipeAiResponse> {
     const cacheKey = generateCacheKey('generate-single', {
       v: PROMPT_VERSIONS.generate,
       model: 'gpt-5-mini',
       query: dishQuery,
       lang: responseLanguage,
+      categories,
     });
 
     try {
@@ -530,15 +550,21 @@ Rules:
         'AI cache MISS: generateSingleRecipe',
       );
 
+      const categoryBlock =
+        categories.length > 0
+          ? `\nAvailable product categories:\n${categories.map((c) => `- "${c.slug}" (${c.name})`).join('\n')}\n`
+          : '';
+
       const prompt = `
 User query (can be in any language):
 "${dishQuery}"
-
+${categoryBlock}
 Your task:
 1. Understand the user's intent regardless of query language
 2. Determine how many people the dish is for (default: 2 if not specified)
 3. Generate one classic, realistic recipe for the requested dish
 4. Calculate ingredient quantities for the determined number of people
+${categories.length > 0 ? '5. Assign the most appropriate category to each ingredient from the provided list' : ''}
 
 Rules:
 - All human-readable text MUST be in language: "${responseLanguage}"
@@ -553,6 +579,7 @@ Rules:
 - Instructions MUST describe concrete actions (e.g., cut, fry, boil, mix)
 - Do not use ranges, approximations, or "to taste"
 - Use metric system
+${categories.length > 0 ? '- categorySlug MUST be one of the provided category slugs, or null if no category fits' : '- categorySlug MUST be null (no categories provided)'}
 `;
 
       const result = await this.callAndParseJson<SingleRecipeAiResponse>(

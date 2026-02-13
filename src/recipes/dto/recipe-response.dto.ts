@@ -1,6 +1,55 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Recipe } from '../../entities/recipe.entity';
+import { RecipeIngredient } from '../../entities/recipe-ingredient.entity';
 import { RecipeSource } from '../enums/recipe-source.enum';
+
+class IngredientCategoryDto {
+  @ApiProperty({ example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' })
+  id: string;
+
+  @ApiProperty({ example: 'Vegetables' })
+  name: string;
+
+  @ApiPropertyOptional({ example: '🥕', nullable: true })
+  icon: string | null;
+}
+
+export class RecipeIngredientResponseDto {
+  @ApiProperty({ example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' })
+  id: string;
+
+  @ApiProperty({ example: 'beetroot' })
+  name: string;
+
+  @ApiProperty({ example: 2 })
+  quantity: number;
+
+  @ApiProperty({ example: 'pcs' })
+  unit: string;
+
+  @ApiPropertyOptional({ type: IngredientCategoryDto, nullable: true })
+  category: IngredientCategoryDto | null;
+
+  @ApiProperty({ example: 0 })
+  position: number;
+
+  static fromEntity(entity: RecipeIngredient): RecipeIngredientResponseDto {
+    const dto = new RecipeIngredientResponseDto();
+    dto.id = entity.id;
+    dto.name = entity.name;
+    dto.quantity = Number(entity.quantity);
+    dto.unit = entity.unit;
+    dto.category = entity.category
+      ? {
+          id: entity.category.id,
+          name: entity.category.name,
+          icon: entity.category.icon ?? null,
+        }
+      : null;
+    dto.position = entity.position;
+    return dto;
+  }
+}
 
 export class RecipeResponseDto {
   @ApiProperty({
@@ -30,6 +79,12 @@ export class RecipeResponseDto {
   text: string;
 
   @ApiProperty({
+    description: 'Recipe ingredients',
+    type: [RecipeIngredientResponseDto],
+  })
+  ingredients: RecipeIngredientResponseDto[];
+
+  @ApiProperty({
     description: 'Creation date (ISO 8601)',
     example: '2026-02-11T12:00:00.000Z',
   })
@@ -40,13 +95,6 @@ export class RecipeResponseDto {
     example: '2026-02-11T12:00:00.000Z',
   })
   updatedAt: string;
-
-  @ApiPropertyOptional({
-    description: 'Linked shopping list ID (null if not linked)',
-    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-    nullable: true,
-  })
-  shoppingListId: string | null;
 
   @ApiProperty({
     description: 'Meal plans that include this recipe',
@@ -60,7 +108,9 @@ export class RecipeResponseDto {
     dto.title = entity.title;
     dto.source = entity.source;
     dto.text = entity.text;
-    dto.shoppingListId = entity.shoppingListId ?? null;
+    dto.ingredients = (entity.ingredients ?? [])
+      .sort((a, b) => a.position - b.position)
+      .map((ing) => RecipeIngredientResponseDto.fromEntity(ing));
     dto.createdAt = entity.createdAt.toISOString();
     dto.updatedAt = entity.updatedAt.toISOString();
     dto.mealPlans = (entity.mealPlanRecipes ?? []).map((mpr) => ({
@@ -111,19 +161,11 @@ export class RecipeListItemDto {
   })
   createdAt: string;
 
-  @ApiPropertyOptional({
-    description: 'Linked shopping list ID (null if not linked)',
-    example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-    nullable: true,
-  })
-  shoppingListId: string | null;
-
   static fromEntity(entity: Recipe): RecipeListItemDto {
     const dto = new RecipeListItemDto();
     dto.id = entity.id;
     dto.title = entity.title;
     dto.source = entity.source;
-    dto.shoppingListId = entity.shoppingListId ?? null;
     dto.createdAt = entity.createdAt.toISOString();
     return dto;
   }

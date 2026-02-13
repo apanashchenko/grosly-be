@@ -4,17 +4,17 @@ import { RecipesController } from './recipes.controller';
 import { RecipesService } from './recipes.service';
 import { AiModule } from '../ai/ai.module';
 import { CategoriesModule } from '../categories/categories.module';
-import { ShoppingListModule } from '../shopping-list/shopping-list.module';
 import { Recipe } from '../entities/recipe.entity';
+import { RecipeIngredient } from '../entities/recipe-ingredient.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Recipe]),
+    TypeOrmModule.forFeature([Recipe, RecipeIngredient]),
     AiModule,
     CategoriesModule,
-    ShoppingListModule,
   ],
   controllers: [RecipesController],
   providers: [RecipesService],
+  exports: [RecipesService],
 })
 export class RecipesModule {}

@@ -31,6 +31,19 @@ export class UpdateMealPlanDto {
   })
   name?: string;
 
+  @ApiPropertyOptional({
+    description: 'Meal plan description',
+    example: 'Healthy meals for the week with minimal prep time',
+    maxLength: 1000,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: string }) =>
+    value?.trim()?.replace(/<[^>]*>/g, ''),
+  )
+  @IsString()
+  @MaxLength(1000)
+  description?: string;
+
   @ApiPropertyOptional({ description: 'Number of days' })
   @IsOptional()
   @IsInt()
@@ -44,15 +57,6 @@ export class UpdateMealPlanDto {
   @Min(1)
   @Max(20)
   numberOfPeople?: number;
-
-  @ApiPropertyOptional({
-    description: 'Shopping list UUID to link (null to unlink)',
-    example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
-    nullable: true,
-  })
-  @IsOptional()
-  @IsUUID('4')
-  shoppingListId?: string | null;
 
   @ApiPropertyOptional({
     description: 'Recipe UUIDs (full replace)',

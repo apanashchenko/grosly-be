@@ -11,6 +11,7 @@ import type { PaginateQuery } from 'nestjs-paginate';
 import { MealPlan } from '../entities/meal-plan.entity';
 import { MealPlanRecipe } from '../entities/meal-plan-recipe.entity';
 import { Recipe } from '../entities/recipe.entity';
+import { RecipesService } from '../recipes/recipes.service';
 import { CreateMealPlanDto } from './dto/create-meal-plan.dto';
 import { UpdateMealPlanDto } from './dto/update-meal-plan.dto';
 import { MealPlanResponseDto } from './dto/meal-plan-response.dto';
@@ -26,6 +27,7 @@ export class MealPlansService {
     private readonly mealPlanRecipeRepo: Repository<MealPlanRecipe>,
     @InjectRepository(Recipe)
     private readonly recipeRepo: Repository<Recipe>,
+    private readonly recipesService: RecipesService,
   ) {}
 
   async create(
@@ -37,6 +39,7 @@ export class MealPlansService {
 
     const mealPlan = this.mealPlanRepo.create({
       name,
+      description: dto.description ?? null,
       numberOfDays: dto.numberOfDays ?? 1,
       numberOfPeople: dto.numberOfPeople ?? 1,
       userId,
@@ -44,12 +47,25 @@ export class MealPlansService {
 
     const saved = await this.mealPlanRepo.save(mealPlan);
 
+    if (dto.recipes?.length) {
+      const recipeIds: string[] = [];
+      for (const recipeDto of dto.recipes) {
+        const savedRecipe = await this.recipesService.saveRecipe(
+          userId,
+          recipeDto,
+        );
+        recipeIds.push(savedRecipe.id);
+      }
+      await this.linkRecipes(saved.id, recipeIds);
+    }
+
     this.logger.log(
       { id: saved.id, name: saved.name },
       'Meal plan created',
     );
 
-    return MealPlanResponseDto.fromEntity(saved);
+    const result = await this.findOneEntity(userId, saved.id);
+    return MealPlanResponseDto.fromEntity(result);
   }
 
   async findAllByUser(
@@ -83,13 +99,11 @@ export class MealPlansService {
 
     const updateData: Partial<MealPlan> = {};
     if (dto.name !== undefined) updateData.name = dto.name;
+    if (dto.description !== undefined) updateData.description = dto.description;
     if (dto.numberOfDays !== undefined)
       updateData.numberOfDays = dto.numberOfDays;
     if (dto.numberOfPeople !== undefined)
       updateData.numberOfPeople = dto.numberOfPeople;
-    if (dto.shoppingListId !== undefined)
-      updateData.shoppingListId = dto.shoppingListId;
-
     if (Object.keys(updateData).length > 0) {
       await this.mealPlanRepo.update(id, updateData);
     }
@@ -136,10 +150,16 @@ export class MealPlansService {
     // Delete existing join records
     await this.mealPlanRecipeRepo.delete({ mealPlanId: mealPlan.id });
 
-    // Create new join records
+    await this.linkRecipes(mealPlan.id, recipeIds);
+  }
+
+  private async linkRecipes(
+    mealPlanId: string,
+    recipeIds: string[],
+  ): Promise<void> {
     for (let i = 0; i < recipeIds.length; i++) {
       const mealPlanRecipe = this.mealPlanRecipeRepo.create({
-        mealPlanId: mealPlan.id,
+        mealPlanId,
         recipeId: recipeIds[i],
         dayNumber: 1,
         position: i,
@@ -154,7 +174,11 @@ export class MealPlansService {
   ): Promise<MealPlan> {
     const mealPlan = await this.mealPlanRepo.findOne({
       where: { id },
-      relations: ['mealPlanRecipes', 'mealPlanRecipes.recipe'],
+      relations: [
+        'mealPlanRecipes',
+        'mealPlanRecipes.recipe',
+        'mealPlanRecipes.recipe.ingredients',
+      ],
     });
 
     if (!mealPlan) {

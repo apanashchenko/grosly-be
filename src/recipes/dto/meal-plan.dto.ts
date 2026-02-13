@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsString,
   IsNotEmpty,
@@ -131,6 +131,13 @@ export class RecipeIngredientDto {
     type: UnitDto,
   })
   unit: UnitDto;
+
+  @ApiPropertyOptional({
+    description: 'Category UUID (resolved from AI-assigned category)',
+    example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    nullable: true,
+  })
+  categoryId: string | null;
 }
 
 export class InstructionStepDto {
@@ -227,6 +234,13 @@ export class MealPlanResponseDto {
     type: ParsedRequestDto,
   })
   parsedRequest: ParsedRequestDto;
+
+  @ApiProperty({
+    description: 'Short summary of the meal plan theme/goal',
+    example:
+      'Збалансований план харчування на 3 дні для 2 осіб з акцентом на домашню українську кухню',
+  })
+  description: string;
 
   @ApiProperty({
     description: 'List of generated recipes',

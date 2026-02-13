@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MealPlan } from '../../entities/meal-plan.entity';
 import { RecipeSource } from '../../recipes/enums/recipe-source.enum';
+import { RecipeIngredientResponseDto } from '../../recipes/dto/recipe-response.dto';
 
 class MealPlanRecipeResponseDto {
   @ApiProperty({ example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' })
@@ -21,11 +22,8 @@ class MealPlanRecipeResponseDto {
   })
   recipeText: string;
 
-  @ApiPropertyOptional({
-    description: 'Shopping list linked to this recipe',
-    nullable: true,
-  })
-  recipeShoppingListId: string | null;
+  @ApiProperty({ type: [RecipeIngredientResponseDto] })
+  ingredients: RecipeIngredientResponseDto[];
 
   @ApiProperty({ example: 1 })
   dayNumber: number;
@@ -41,14 +39,14 @@ export class MealPlanResponseDto {
   @ApiProperty({ example: 'Weekly dinner plan' })
   name: string;
 
+  @ApiPropertyOptional({ nullable: true, example: 'Healthy meals for the week' })
+  description: string | null;
+
   @ApiProperty({ example: 3 })
   numberOfDays: number;
 
   @ApiProperty({ example: 2 })
   numberOfPeople: number;
-
-  @ApiPropertyOptional({ nullable: true })
-  shoppingListId: string | null;
 
   @ApiProperty({ type: [MealPlanRecipeResponseDto] })
   recipes: MealPlanRecipeResponseDto[];
@@ -63,9 +61,9 @@ export class MealPlanResponseDto {
     const dto = new MealPlanResponseDto();
     dto.id = entity.id;
     dto.name = entity.name;
+    dto.description = entity.description ?? null;
     dto.numberOfDays = entity.numberOfDays;
     dto.numberOfPeople = entity.numberOfPeople;
-    dto.shoppingListId = entity.shoppingListId ?? null;
     dto.recipes = (entity.mealPlanRecipes || [])
       .sort((a, b) => {
         if (a.dayNumber !== b.dayNumber) return a.dayNumber - b.dayNumber;
@@ -77,7 +75,9 @@ export class MealPlanResponseDto {
         recipeTitle: mpr.recipe?.title ?? '',
         recipeSource: mpr.recipe?.source ?? RecipeSource.GENERATED,
         recipeText: mpr.recipe?.text ?? '',
-        recipeShoppingListId: mpr.recipe?.shoppingListId ?? null,
+        ingredients: (mpr.recipe?.ingredients ?? [])
+          .sort((a, b) => a.position - b.position)
+          .map((ing) => RecipeIngredientResponseDto.fromEntity(ing)),
         dayNumber: mpr.dayNumber,
         position: mpr.position,
       }));
@@ -93,6 +93,9 @@ export class MealPlanListItemDto {
 
   @ApiProperty({ example: 'Weekly dinner plan' })
   name: string;
+
+  @ApiPropertyOptional({ nullable: true, example: 'Healthy meals for the week' })
+  description: string | null;
 
   @ApiProperty({ example: 3 })
   numberOfDays: number;
@@ -110,6 +113,7 @@ export class MealPlanListItemDto {
     const dto = new MealPlanListItemDto();
     dto.id = entity.id;
     dto.name = entity.name;
+    dto.description = entity.description ?? null;
     dto.numberOfDays = entity.numberOfDays;
     dto.numberOfPeople = entity.numberOfPeople;
     dto.recipesCount = entity.mealPlanRecipes?.length ?? 0;

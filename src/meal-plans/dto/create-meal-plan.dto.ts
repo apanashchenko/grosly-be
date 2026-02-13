@@ -2,14 +2,18 @@ import {
   IsString,
   IsOptional,
   IsInt,
+  IsArray,
+  ArrayMaxSize,
+  ValidateNested,
   Min,
   Max,
   MinLength,
   MaxLength,
   Matches,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { SaveRecipeDto } from '../../recipes/dto/save-recipe.dto';
 
 export class CreateMealPlanDto {
   @ApiPropertyOptional({
@@ -29,6 +33,19 @@ export class CreateMealPlanDto {
     message: 'Name contains forbidden characters',
   })
   name?: string;
+
+  @ApiPropertyOptional({
+    description: 'Meal plan description',
+    example: 'Healthy meals for the week with minimal prep time',
+    maxLength: 1000,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: string }) =>
+    value?.trim()?.replace(/<[^>]*>/g, ''),
+  )
+  @IsString()
+  @MaxLength(1000)
+  description?: string;
 
   @ApiPropertyOptional({
     description: 'Number of days in the meal plan',
@@ -51,4 +68,15 @@ export class CreateMealPlanDto {
   @Min(1)
   @Max(20)
   numberOfPeople?: number;
+
+  @ApiPropertyOptional({
+    description: 'Recipes to create and add to the meal plan',
+    type: [SaveRecipeDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(21)
+  @ValidateNested({ each: true })
+  @Type(() => SaveRecipeDto)
+  recipes?: SaveRecipeDto[];
 }

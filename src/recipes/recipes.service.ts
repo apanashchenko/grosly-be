@@ -9,17 +9,21 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { paginate, Paginated, PaginationType } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
-import { AiService } from '../ai/ai.service';
+import {
+  AiService,
+  Recipe as AiRecipe,
+} from '../ai/ai.service';
 import { CategoriesService } from '../categories/categories.service';
-import { ShoppingListService } from '../shopping-list/shopping-list.service';
 import { Category } from '../entities/category.entity';
 import { Recipe } from '../entities/recipe.entity';
+import { RecipeIngredient } from '../entities/recipe-ingredient.entity';
 import { ParseRecipeDto } from './dto/parse-recipe.dto';
 import { ParseRecipeResponseDto } from './dto/ingredient.dto';
 import {
   GenerateMealPlanDto,
   GenerateSingleRecipeDto,
   MealPlanResponseDto,
+  RecipeDto,
   SingleRecipeResponseDto,
 } from './dto/meal-plan.dto';
 import {
@@ -42,9 +46,10 @@ export class RecipesService {
   constructor(
     @InjectRepository(Recipe)
     private readonly recipeRepo: Repository<Recipe>,
+    @InjectRepository(RecipeIngredient)
+    private readonly ingredientRepo: Repository<RecipeIngredient>,
     private aiService: AiService,
     private categoriesService: CategoriesService,
-    private shoppingListService: ShoppingListService,
   ) {}
 
   // ==================== SAVED RECIPES CRUD ====================
@@ -61,32 +66,28 @@ export class RecipesService {
       source: dto.source,
       text: dto.text,
       userId,
+      ingredients: dto.ingredients.map((ing, index) =>
+        this.ingredientRepo.create({
+          name: ing.name,
+          quantity: ing.quantity,
+          unit: ing.unit,
+          categoryId: ing.categoryId ?? null,
+          position: index,
+        }),
+      ),
     });
 
     const saved = await this.recipeRepo.save(recipe);
 
     this.logger.log(
-      { id: saved.id, title: saved.title, source: saved.source },
+      {
+        id: saved.id,
+        title: saved.title,
+        source: saved.source,
+        ingredientsCount: saved.ingredients.length,
+      },
       'Recipe saved',
     );
-
-    let shoppingListId: string | null = null;
-
-    if (dto.isAddToShoppingList && dto.items?.length) {
-      const list = await this.shoppingListService.create(userId, {
-        name: dto.shoppingListName || title,
-        items: dto.items,
-      });
-      shoppingListId = list.id;
-
-      saved.shoppingListId = list.id;
-      await this.recipeRepo.save(saved);
-
-      this.logger.log(
-        { recipeId: saved.id, shoppingListId },
-        'Shopping list created from recipe',
-      );
-    }
 
     return RecipeResponseDto.fromEntity(saved);
   }
@@ -137,6 +138,22 @@ export class RecipesService {
 
     if (dto.title !== undefined) recipe.title = dto.title;
     if (dto.text !== undefined) recipe.text = dto.text;
+
+    if (dto.ingredients !== undefined) {
+      await this.ingredientRepo.delete({ recipeId: id });
+
+      recipe.ingredients = dto.ingredients.map((ing, index) =>
+        this.ingredientRepo.create({
+          recipeId: id,
+          name: ing.name,
+          quantity: ing.quantity,
+          unit: ing.unit,
+          categoryId: ing.categoryId ?? null,
+          position: index,
+        }),
+      );
+    }
+
     const saved = await this.recipeRepo.save(recipe);
 
     this.logger.log({ id: saved.id, title: saved.title }, 'Recipe updated');
@@ -212,15 +229,24 @@ export class RecipesService {
 
   async generateSingleRecipe(
     dto: GenerateSingleRecipeDto,
+    userId: string,
   ): Promise<SingleRecipeResponseDto> {
     this.logger.debug(
       { query: dto.query, language: dto.language },
       'Generating single recipe from user query',
     );
 
+    const categories = await this.categoriesService.findAll(userId);
+    const categoryMap = new Map(categories.map((cat) => [cat.slug, cat]));
+    const categoryHints = categories.map((cat) => ({
+      slug: cat.slug,
+      name: cat.name,
+    }));
+
     const aiResponse = await this.aiService.generateSingleRecipe(
       dto.query,
       dto.language || 'uk',
+      categoryHints,
     );
 
     const { numberOfPeople } = aiResponse;
@@ -245,12 +271,13 @@ export class RecipesService {
 
     return {
       numberOfPeople,
-      recipe: aiResponse.recipe,
+      recipe: this.mapRecipeCategories(aiResponse.recipe, categoryMap),
     };
   }
 
   async generateMealPlan(
     generateMealPlanDto: GenerateMealPlanDto,
+    userId: string,
   ): Promise<MealPlanResponseDto> {
     this.logger.debug(
       {
@@ -260,9 +287,17 @@ export class RecipesService {
       'Generating meal plan from user query',
     );
 
+    const categories = await this.categoriesService.findAll(userId);
+    const categoryMap = new Map(categories.map((cat) => [cat.slug, cat]));
+    const categoryHints = categories.map((cat) => ({
+      slug: cat.slug,
+      name: cat.name,
+    }));
+
     const aiResponse = await this.aiService.generateMealPlanFromUserQuery(
       generateMealPlanDto.query,
       generateMealPlanDto.language || 'uk',
+      categoryHints,
     );
 
     // Business-level validation of AI-parsed values
@@ -279,7 +314,10 @@ export class RecipesService {
 
     return {
       parsedRequest: aiResponse.parsedRequest,
-      recipes: aiResponse.recipes,
+      description: aiResponse.description,
+      recipes: aiResponse.recipes.map((r) =>
+        this.mapRecipeCategories(r, categoryMap),
+      ),
     };
   }
 
@@ -368,5 +406,25 @@ export class RecipesService {
     );
 
     return result;
+  }
+
+  private mapRecipeCategories(
+    recipe: AiRecipe,
+    categoryMap: Map<string, Category>,
+  ): RecipeDto {
+    return {
+      dishName: recipe.dishName,
+      description: recipe.description,
+      ingredients: recipe.ingredients.map((ing) => ({
+        name: ing.name,
+        quantity: ing.quantity,
+        unit: ing.unit,
+        categoryId: ing.categorySlug
+          ? (categoryMap.get(ing.categorySlug)?.id ?? null)
+          : null,
+      })),
+      instructions: recipe.instructions,
+      cookingTime: recipe.cookingTime,
+    };
   }
 }

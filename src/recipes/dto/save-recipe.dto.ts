@@ -1,19 +1,73 @@
 import {
   IsString,
   IsOptional,
-  IsBoolean,
   IsEnum,
   IsArray,
   IsNotEmpty,
+  IsNumber,
+  IsUUID,
   MaxLength,
+  MinLength,
+  Min,
   ArrayMinSize,
   ArrayMaxSize,
   ValidateNested,
+  Matches,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RecipeSource } from '../enums/recipe-source.enum';
-import { ShoppingListItemDto } from '../../shopping-list/dto/shopping-list-item.dto';
+
+export class RecipeIngredientItemDto {
+  @ApiProperty({
+    description: 'Ingredient name',
+    example: 'beetroot',
+    minLength: 1,
+    maxLength: 200,
+  })
+  @Transform(({ value }: { value: string }) =>
+    value?.trim()?.replace(/<[^>]*>/g, ''),
+  )
+  @IsString()
+  @IsNotEmpty({ message: 'Ingredient name cannot be empty' })
+  @MinLength(1, { message: 'Ingredient name is too short (min 1 character)' })
+  @MaxLength(200, {
+    message: 'Ingredient name is too long (max 200 characters)',
+  })
+  @Matches(/^[^<>{}[\]\\$#@`|~^&;]+$/, {
+    message: 'Ingredient name contains forbidden characters',
+  })
+  name: string;
+
+  @ApiProperty({
+    description: 'Quantity',
+    example: 2,
+    minimum: 0,
+  })
+  @IsNumber({}, { message: 'Quantity must be a number' })
+  @Min(0, { message: 'Quantity cannot be negative' })
+  quantity: number;
+
+  @ApiProperty({
+    description: 'Unit of measurement',
+    example: 'pcs',
+    maxLength: 50,
+  })
+  @Transform(({ value }: { value: string }) =>
+    value?.trim()?.replace(/<[^>]*>/g, ''),
+  )
+  @IsString()
+  @MaxLength(50, { message: 'Unit is too long (max 50 characters)' })
+  unit: string;
+
+  @ApiPropertyOptional({
+    description: 'Category UUID',
+    example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+  })
+  @IsOptional()
+  @IsUUID('4', { message: 'categoryId must be a valid UUID' })
+  categoryId?: string;
+}
 
 export class SaveRecipeDto {
   @ApiPropertyOptional({
@@ -52,41 +106,16 @@ export class SaveRecipeDto {
   @MaxLength(3000)
   text: string;
 
-  @ApiPropertyOptional({
-    description: 'Whether to also add ingredients to a shopping list',
-    example: false,
-    default: false,
+  @ApiProperty({
+    description: 'Recipe ingredients',
+    type: [RecipeIngredientItemDto],
   })
-  @IsOptional()
-  @IsBoolean()
-  isAddToShoppingList?: boolean;
-
-  @ApiPropertyOptional({
-    description:
-      'Ingredients for shopping list (required when isAddToShoppingList=true)',
-    type: [ShoppingListItemDto],
-  })
-  @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(100)
   @ValidateNested({ each: true })
-  @Type(() => ShoppingListItemDto)
-  items?: ShoppingListItemDto[];
-
-  @ApiPropertyOptional({
-    description:
-      'Name for the auto-created shopping list (only used when isAddToShoppingList=true)',
-    example: 'Borscht groceries',
-    maxLength: 100,
-  })
-  @IsOptional()
-  @Transform(({ value }: { value: string }) =>
-    value?.trim()?.replace(/<[^>]*>/g, ''),
-  )
-  @IsString()
-  @MaxLength(100)
-  shoppingListName?: string;
+  @Type(() => RecipeIngredientItemDto)
+  ingredients: RecipeIngredientItemDto[];
 }
 
 export class UpdateRecipeDto {
@@ -118,4 +147,16 @@ export class UpdateRecipeDto {
   @IsNotEmpty()
   @MaxLength(3000)
   text?: string;
+
+  @ApiPropertyOptional({
+    description: 'Updated ingredients (full replace)',
+    type: [RecipeIngredientItemDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => RecipeIngredientItemDto)
+  ingredients?: RecipeIngredientItemDto[];
 }

@@ -54,7 +54,7 @@ export class RecipesController {
   @ApiOperation({
     summary: 'Save a recipe',
     description:
-      'Saves an AI-generated/parsed/suggested recipe with its original input. Optionally creates a shopping list from the ingredients.',
+      'Saves an AI-generated/parsed/suggested recipe with its ingredients.',
   })
   @ApiResponse({
     status: 201,
@@ -194,9 +194,10 @@ export class RecipesController {
     description: 'Internal server error or OpenAI API error',
   })
   async generateSingleRecipe(
+    @CurrentUser() user: User,
     @Body(new ValidationPipe()) dto: GenerateSingleRecipeDto,
   ): Promise<SingleRecipeResponseDto> {
-    return this.recipesService.generateSingleRecipe(dto);
+    return this.recipesService.generateSingleRecipe(dto, user.id);
   }
 
   @Post('meal-plan')
@@ -220,9 +221,10 @@ export class RecipesController {
     description: 'Internal server error or OpenAI API error',
   })
   async generateMealPlan(
+    @CurrentUser() user: User,
     @Body(new ValidationPipe()) generateMealPlanDto: GenerateMealPlanDto,
   ): Promise<MealPlanResponseDto> {
-    return this.recipesService.generateMealPlan(generateMealPlanDto);
+    return this.recipesService.generateMealPlan(generateMealPlanDto, user.id);
   }
 
   @Post('suggest')
