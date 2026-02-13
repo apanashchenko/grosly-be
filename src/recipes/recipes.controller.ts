@@ -6,9 +6,12 @@ import {
   Delete,
   Body,
   Param,
+  Res,
   ParseUUIDPipe,
   ValidationPipe,
+  Logger,
 } from '@nestjs/common';
+import * as express from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -46,6 +49,8 @@ import { UsageAction } from '../subscription/enums/usage-action.enum';
 @ApiBearerAuth()
 @Controller('recipes')
 export class RecipesController {
+  private readonly logger = new Logger(RecipesController.name);
+
   constructor(private readonly recipesService: RecipesService) {}
 
   // ==================== SAVED RECIPES CRUD ====================
@@ -253,5 +258,111 @@ export class RecipesController {
     @Body(new ValidationPipe()) suggestRecipeDto: SuggestRecipeDto,
   ): Promise<SuggestRecipeResponseDto> {
     return this.recipesService.suggestRecipe(suggestRecipeDto);
+  }
+
+  // ==================== STREAMED AI OPERATIONS (SSE) ====================
+
+  @Post('single/stream')
+  @RequireUsageLimit(UsageAction.RECIPE_GENERATION)
+  @ApiOperation({
+    summary: 'Generate a single recipe (SSE stream)',
+    description:
+      'Same as POST /recipes/single but streams raw JSON tokens via SSE. Final event contains the parsed result.',
+  })
+  async generateSingleRecipeStream(
+    @CurrentUser() user: User,
+    @Body(new ValidationPipe()) dto: GenerateSingleRecipeDto,
+    @Res() res: express.Response,
+  ): Promise<void> {
+    this.initSse(res);
+
+    try {
+      const result = await this.recipesService.generateSingleRecipeStreamed(
+        dto,
+        user.id,
+        (delta) => this.writeSseEvent(res, 'chunk', { text: delta }),
+      );
+      this.writeSseEvent(res, 'done', result);
+    } catch (error) {
+      this.writeSseEvent(res, 'error', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+
+    res.end();
+  }
+
+  @Post('meal-plan/stream')
+  @RequireUsageLimit(UsageAction.RECIPE_GENERATION)
+  @ApiOperation({
+    summary: 'Generate a meal plan (SSE stream)',
+    description:
+      'Same as POST /recipes/meal-plan but streams raw JSON tokens via SSE. Final event contains the parsed result.',
+  })
+  async generateMealPlanStream(
+    @CurrentUser() user: User,
+    @Body(new ValidationPipe()) dto: GenerateMealPlanDto,
+    @Res() res: express.Response,
+  ): Promise<void> {
+    this.initSse(res);
+
+    try {
+      const result = await this.recipesService.generateMealPlanStreamed(
+        dto,
+        user.id,
+        (delta) => this.writeSseEvent(res, 'chunk', { text: delta }),
+      );
+      this.writeSseEvent(res, 'done', result);
+    } catch (error) {
+      this.writeSseEvent(res, 'error', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+
+    res.end();
+  }
+
+  @Post('suggest/stream')
+  @RequireFeature('canSuggestRecipes')
+  @RequireUsageLimit(UsageAction.RECIPE_SUGGEST)
+  @ApiOperation({
+    summary: 'Suggest recipes from ingredients (SSE stream)',
+    description:
+      'Same as POST /recipes/suggest but streams raw JSON tokens via SSE. Final event contains the parsed result.',
+  })
+  async suggestRecipeStream(
+    @Body(new ValidationPipe()) suggestRecipeDto: SuggestRecipeDto,
+    @Res() res: express.Response,
+  ): Promise<void> {
+    this.initSse(res);
+
+    try {
+      const result = await this.recipesService.suggestRecipeStreamed(
+        suggestRecipeDto,
+        (delta) => this.writeSseEvent(res, 'chunk', { text: delta }),
+      );
+      this.writeSseEvent(res, 'done', result);
+    } catch (error) {
+      this.writeSseEvent(res, 'error', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+
+    res.end();
+  }
+
+  private initSse(res: express.Response): void {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+  }
+
+  private writeSseEvent(
+    res: express.Response,
+    event: string,
+    data: unknown,
+  ): void {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   }
 }

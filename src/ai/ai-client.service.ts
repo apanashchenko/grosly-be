@@ -1,0 +1,239 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
+import OpenAI from 'openai';
+import { REDIS_CLIENT } from '../cache/cache.module';
+
+export interface AiCallConfig {
+  cacheKey: string;
+  cacheTtlKey: string;
+  cacheTtlDefault: number;
+  model: string;
+  temperature?: number;
+  systemMessage: string;
+  prompt: string;
+  responseFormat?: OpenAI.Chat.Completions.ChatCompletionCreateParams['response_format'];
+}
+
+@Injectable()
+export class AiClientService {
+  private readonly logger = new Logger(AiClientService.name);
+  private readonly openai: OpenAI;
+  private readonly inFlight = new Map<string, Promise<unknown>>();
+
+  constructor(
+    private configService: ConfigService,
+    @Inject(REDIS_CLIENT) private redis: Redis,
+  ) {
+    this.openai = new OpenAI({
+      apiKey: this.configService.get<string>('OPENAI_API_KEY'),
+    });
+  }
+
+  // ==================== DEDUPLICATION ====================
+
+  /**
+   * Deduplicates concurrent calls with the same cache key.
+   * If a call is already in-flight for the same key, returns the existing promise
+   * instead of starting a duplicate OpenAI request.
+   */
+  async deduplicated<T>(
+    cacheKey: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const existing = this.inFlight.get(cacheKey);
+    if (existing) {
+      this.logger.log({ cacheKey }, 'In-flight dedup HIT');
+      return existing as Promise<T>;
+    }
+
+    const promise = Promise.resolve().then(fn);
+    this.inFlight.set(cacheKey, promise);
+    try {
+      return await promise;
+    } finally {
+      this.inFlight.delete(cacheKey);
+    }
+  }
+
+  // ==================== CACHE ====================
+
+  async cacheGet<T>(cacheKey: string, label: string): Promise<T | null> {
+    try {
+      const raw = await this.redis.get(cacheKey);
+      if (raw) {
+        this.logger.log({ cacheKey }, `AI cache HIT: ${label}`);
+        return JSON.parse(raw) as T;
+      }
+    } catch (error: unknown) {
+      this.logger.warn(
+        { error, cacheKey },
+        'Cache GET failed, proceeding without cache',
+      );
+    }
+    return null;
+  }
+
+  async cacheSet(
+    cacheKey: string,
+    data: unknown,
+    ttlKey: string,
+    ttlDefault: number,
+  ): Promise<void> {
+    const ttl = this.configService.get<number>(ttlKey, ttlDefault);
+    try {
+      await this.redis.set(cacheKey, JSON.stringify(data), 'EX', ttl);
+    } catch (error: unknown) {
+      this.logger.warn({ error, cacheKey }, 'Cache SET failed');
+    }
+  }
+
+  // ==================== OPENAI CALLS ====================
+
+  /**
+   * Makes an OpenAI API call via config, parses the JSON response,
+   * and retries the full call once on JSON parse failure.
+   */
+  async callAndParseJson<T>(
+    config: AiCallConfig,
+    operationName: string,
+  ): Promise<T> {
+    const makeCall = async (): Promise<{
+      text: string;
+      completion: OpenAI.Chat.Completions.ChatCompletion;
+      duration: number;
+    }> => {
+      const startTime = Date.now();
+      const completion = await this.createCompletion(config);
+      const duration = Date.now() - startTime;
+
+      this.logger.log(
+        {
+          model: completion.model,
+          duration,
+          tokensUsed: completion.usage?.total_tokens,
+        },
+        `OpenAI API call completed: ${operationName}`,
+      );
+
+      const responseText = completion.choices[0].message.content?.trim();
+      if (!responseText) {
+        this.logger.error('Empty response from OpenAI API');
+        throw new Error('Empty response from OpenAI');
+      }
+
+      return { text: responseText, completion, duration };
+    };
+
+    const parseJson = (text: string): T => {
+      const jsonText = text
+        .replace(/```json\n?/g, '')
+        .replace(/```\n?/g, '')
+        .trim();
+      return JSON.parse(jsonText) as T;
+    };
+
+    const { text: responseText } = await makeCall();
+    try {
+      return parseJson(responseText);
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        this.logger.warn(
+          {
+            rawResponse: responseText.substring(0, 500),
+            operationName,
+          },
+          'JSON parse failed, retrying OpenAI call once',
+        );
+        const { text: retryText } = await makeCall();
+        return parseJson(retryText);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Streams an OpenAI chat completion via .stream(), forwarding each text
+   * delta via onChunk and returning the final parsed JSON result.
+   */
+  async callStreamedJson<T>(
+    config: AiCallConfig,
+    onChunk: (delta: string) => void,
+    operationName: string,
+  ): Promise<T> {
+    const startTime = Date.now();
+    const stream = this.createStream(config);
+
+    stream.on('content.delta', ({ delta }) => {
+      onChunk(delta);
+    });
+
+    const completion = await stream.finalChatCompletion();
+    const duration = Date.now() - startTime;
+
+    this.logger.log(
+      {
+        duration,
+        operationName,
+        model: completion.model,
+        tokensUsed: completion.usage?.total_tokens,
+      },
+      'Streamed OpenAI call done',
+    );
+
+    const responseText = completion.choices[0].message.content?.trim();
+    if (!responseText) {
+      throw new Error('Empty response from OpenAI stream');
+    }
+
+    const jsonText = responseText
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+    return JSON.parse(jsonText) as T;
+  }
+
+  /**
+   * Raw OpenAI completion call (for cases that don't use AiCallConfig,
+   * e.g. categorizeItems with inline schema).
+   */
+  async rawCompletion(
+    params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+  ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+    return this.openai.chat.completions.create(params);
+  }
+
+  // ==================== PRIVATE ====================
+
+  private createCompletion(config: AiCallConfig) {
+    return this.openai.chat.completions.create({
+      model: config.model,
+      ...(config.temperature !== undefined && {
+        temperature: config.temperature,
+      }),
+      ...(config.responseFormat && {
+        response_format: config.responseFormat,
+      }),
+      messages: [
+        { role: 'system' as const, content: config.systemMessage },
+        { role: 'user' as const, content: config.prompt },
+      ],
+    });
+  }
+
+  private createStream(config: AiCallConfig) {
+    return this.openai.chat.completions.stream({
+      model: config.model,
+      ...(config.temperature !== undefined && {
+        temperature: config.temperature,
+      }),
+      ...(config.responseFormat && {
+        response_format: config.responseFormat,
+      }),
+      messages: [
+        { role: 'system' as const, content: config.systemMessage },
+        { role: 'user' as const, content: config.prompt },
+      ],
+    });
+  }
+}

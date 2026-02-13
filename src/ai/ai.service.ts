@@ -1,9 +1,11 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import Redis from 'ioredis';
-import OpenAI from 'openai';
-import { REDIS_CLIENT } from '../cache/cache.module';
+import { Injectable, Logger } from '@nestjs/common';
 import { generateCacheKey } from '../cache/cache-key.util';
+import { AiClientService, AiCallConfig } from './ai-client.service';
+import {
+  SINGLE_RECIPE_RESPONSE_FORMAT,
+  MEAL_PLAN_RESPONSE_FORMAT,
+  SUGGEST_RECIPES_RESPONSE_FORMAT,
+} from './ai.schemas';
 
 export interface Ingredient {
   name: string;
@@ -86,207 +88,55 @@ const PROMPT_VERSIONS = {
   categorize: 'v1',
 } as const;
 
-const UNIT_SCHEMA = {
-  type: 'object',
-  properties: {
-    canonical: { type: 'string' },
-    localized: { type: 'string' },
-  },
-  required: ['canonical', 'localized'],
-  additionalProperties: false,
-} as const;
-
-const INSTRUCTION_STEP_SCHEMA = {
-  type: 'object',
-  properties: {
-    step: { type: 'number' },
-    text: { type: 'string' },
-  },
-  required: ['step', 'text'],
-  additionalProperties: false,
-} as const;
-
-const RECIPE_INGREDIENT_SCHEMA = {
-  type: 'object',
-  properties: {
-    name: { type: 'string' },
-    quantity: { type: 'number' },
-    unit: UNIT_SCHEMA,
-    categorySlug: { type: ['string', 'null'] },
-  },
-  required: ['name', 'quantity', 'unit', 'categorySlug'],
-  additionalProperties: false,
-} as const;
-
-const RECIPE_SCHEMA = {
-  type: 'object',
-  properties: {
-    dishName: { type: 'string' },
-    description: { type: 'string' },
-    ingredients: { type: 'array', items: RECIPE_INGREDIENT_SCHEMA },
-    instructions: { type: 'array', items: INSTRUCTION_STEP_SCHEMA },
-    cookingTime: { type: 'number' },
-  },
-  required: [
-    'dishName',
-    'description',
-    'ingredients',
-    'instructions',
-    'cookingTime',
-  ],
-  additionalProperties: false,
-} as const;
-
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
-  private openai: OpenAI;
-  private readonly inFlight = new Map<string, Promise<unknown>>();
 
-  constructor(
-    private configService: ConfigService,
-    @Inject(REDIS_CLIENT) private redis: Redis,
-  ) {
-    this.openai = new OpenAI({
-      apiKey: this.configService.get<string>('OPENAI_API_KEY'),
-    });
+  constructor(private readonly client: AiClientService) {}
+
+  // ==================== PROMPT / CONFIG BUILDERS ====================
+
+  private buildCategoryBlock(
+    categories: { slug: string; name: string }[],
+  ): string {
+    if (categories.length === 0) return '';
+    return `\nAvailable product categories:\n${categories.map((c) => `- "${c.slug}" (${c.name})`).join('\n')}\n`;
   }
 
-  /**
-   * Deduplicates concurrent calls with the same cache key.
-   * If a call is already in-flight for the same key, returns the existing promise
-   * instead of starting a duplicate OpenAI request.
-   */
-  private async deduplicated<T>(
-    cacheKey: string,
-    fn: () => Promise<T>,
-  ): Promise<T> {
-    const existing = this.inFlight.get(cacheKey);
-    if (existing) {
-      this.logger.log({ cacheKey }, 'In-flight dedup HIT');
-      return existing as Promise<T>;
-    }
-
-    const promise = Promise.resolve().then(fn);
-    this.inFlight.set(cacheKey, promise);
-    try {
-      return await promise;
-    } finally {
-      this.inFlight.delete(cacheKey);
-    }
+  private buildCategoryRule(
+    categories: { slug: string; name: string }[],
+  ): string {
+    return categories.length > 0
+      ? '- categorySlug MUST be one of the provided category slugs, or null if no category fits'
+      : '- categorySlug MUST be null (no categories provided)';
   }
 
-  /**
-   * Makes an OpenAI API call via the provided factory, parses the JSON response,
-   * and retries the full call once on JSON parse failure.
-   */
-  private async callAndParseJson<T>(
-    createCompletion: () => Promise<OpenAI.Chat.Completions.ChatCompletion>,
-    operationName: string,
-  ): Promise<T> {
-    const makeCall = async (): Promise<{
-      text: string;
-      completion: OpenAI.Chat.Completions.ChatCompletion;
-      duration: number;
-    }> => {
-      const startTime = Date.now();
-      const completion = await createCompletion();
-      const duration = Date.now() - startTime;
-
-      this.logger.log(
-        {
-          model: completion.model,
-          duration,
-          tokensUsed: completion.usage?.total_tokens,
-        },
-        `OpenAI API call completed: ${operationName}`,
-      );
-
-      const responseText = completion.choices[0].message.content?.trim();
-      if (!responseText) {
-        this.logger.error('Empty response from OpenAI API');
-        throw new Error('Empty response from OpenAI');
-      }
-
-      return { text: responseText, completion, duration };
-    };
-
-    const parseJson = (text: string): T => {
-      const jsonText = text
-        .replace(/```json\n?/g, '')
-        .replace(/```\n?/g, '')
-        .trim();
-      return JSON.parse(jsonText) as T;
-    };
-
-    const { text: responseText } = await makeCall();
-    try {
-      return parseJson(responseText);
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        this.logger.warn(
-          {
-            rawResponse: responseText.substring(0, 500),
-            operationName,
-          },
-          'JSON parse failed, retrying OpenAI call once',
-        );
-        const { text: retryText } = await makeCall();
-        return parseJson(retryText);
-      }
-      throw error;
-    }
-  }
-
-  async extractIngredientsFromRecipe(
+  private buildExtractIngredientsConfig(
     recipeText: string,
-    responseLanguage: string = 'uk',
-    categories: { slug: string; name: string }[] = [],
-  ): Promise<Ingredient[]> {
-    const cacheKey = generateCacheKey('parse', {
-      v: PROMPT_VERSIONS.parse,
+    responseLanguage: string,
+    categories: { slug: string; name: string }[],
+  ): AiCallConfig {
+    return {
+      cacheKey: generateCacheKey('parse', {
+        v: PROMPT_VERSIONS.parse,
+        model: 'gpt-4.1-mini',
+        temp: 0.3,
+        text: recipeText,
+        lang: responseLanguage,
+        categories,
+      }),
+      cacheTtlKey: 'AI_CACHE_TTL_PARSE',
+      cacheTtlDefault: 21600,
       model: 'gpt-4.1-mini',
-      temp: 0.3,
-      text: recipeText,
-      lang: responseLanguage,
-      categories,
-    });
-
-    try {
-      const raw = await this.redis.get(cacheKey);
-      if (raw) {
-        this.logger.log({ cacheKey }, 'AI cache HIT: extractIngredients');
-        return JSON.parse(raw) as Ingredient[];
-      }
-    } catch (error: unknown) {
-      this.logger.warn(
-        { error, cacheKey },
-        'Cache GET failed, proceeding without cache',
-      );
-    }
-
-    return this.deduplicated(cacheKey, async () => {
-      this.logger.log(
-        {
-          cacheKey,
-          recipeTextLength: recipeText.length,
-          responseLanguage,
-          categoriesCount: categories.length,
-        },
-        'AI cache MISS: extractIngredientsFromRecipe',
-      );
-
-      const categoryBlock =
-        categories.length > 0
-          ? `\nAvailable product categories:\n${categories.map((c) => `- "${c.slug}" (${c.name})`).join('\n')}\n`
-          : '';
-
-      const prompt = `
+      temperature: 0.3,
+      systemMessage:
+        'You are a culinary text analyst. You strictly follow schemas and return valid JSON only.',
+      prompt: `
 Recipe text (can be in any language):
 """
 ${recipeText}
 """
-${categoryBlock}
+${this.buildCategoryBlock(categories)}
 Your task:
 1. Understand the recipe text regardless of language
 2. Extract ALL mentioned ingredients exactly as written
@@ -323,92 +173,81 @@ Rules:
 - Use metric system where possible
 ${categories.length > 0 ? '- categorySlug MUST be one of the provided category slugs, or null if no category fits\n- Pick the most semantically appropriate category for each ingredient' : '- categorySlug MUST be null (no categories provided)'}
 - Return JSON ONLY, no markdown, no explanations
-`;
-
-      const parsed = await this.callAndParseJson<{
-        ingredients: Ingredient[];
-      }>(
-        () =>
-          this.openai.chat.completions.create({
-            model: 'gpt-4.1-mini',
-            temperature: 0.3,
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'You are a culinary text analyst. You strictly follow schemas and return valid JSON only.',
-              },
-              {
-                role: 'user',
-                content: prompt,
-              },
-            ],
-          }),
-        'extractIngredients',
-      );
-
-      this.logger.log(
-        { ingredientsCount: parsed.ingredients.length },
-        'Ingredients extracted successfully',
-      );
-
-      const ttl = this.configService.get<number>('AI_CACHE_TTL_PARSE', 21600);
-      try {
-        await this.redis.set(
-          cacheKey,
-          JSON.stringify(parsed.ingredients),
-          'EX',
-          ttl,
-        );
-      } catch (error: unknown) {
-        this.logger.warn({ error, cacheKey }, 'Cache SET failed');
-      }
-
-      return parsed.ingredients;
-    });
+`,
+    };
   }
 
-  async generateMealPlanFromUserQuery(
-    userQuery: string,
-    responseLanguage: string = 'uk',
-    categories: { slug: string; name: string }[] = [],
-  ): Promise<MealPlanAiResponse> {
-    const cacheKey = generateCacheKey('generate', {
-      v: PROMPT_VERSIONS.generate,
+  private buildSingleRecipeConfig(
+    dishQuery: string,
+    responseLanguage: string,
+    categories: { slug: string; name: string }[],
+  ): AiCallConfig {
+    return {
+      cacheKey: generateCacheKey('generate-single', {
+        v: PROMPT_VERSIONS.generate,
+        model: 'gpt-5-mini',
+        query: dishQuery,
+        lang: responseLanguage,
+        categories,
+      }),
+      cacheTtlKey: 'AI_CACHE_TTL_GENERATE',
+      cacheTtlDefault: 3600,
       model: 'gpt-5-mini',
-      query: userQuery,
-      lang: responseLanguage,
-      categories,
-    });
+      systemMessage:
+        'You are a multilingual culinary expert. You generate detailed, realistic recipes. You strictly follow schemas and return valid JSON only.',
+      responseFormat: SINGLE_RECIPE_RESPONSE_FORMAT,
+      prompt: `
+User query (can be in any language):
+"${dishQuery}"
+${this.buildCategoryBlock(categories)}
+Your task:
+1. Understand the user's intent regardless of query language
+2. Determine how many people the dish is for (default: 2 if not specified)
+3. Generate one classic, realistic recipe for the requested dish
+4. Calculate ingredient quantities for the determined number of people
+${categories.length > 0 ? '5. Assign the most appropriate category to each ingredient from the provided list' : ''}
 
-    try {
-      const raw = await this.redis.get(cacheKey);
-      if (raw) {
-        this.logger.log({ cacheKey }, 'AI cache HIT: generateMealPlan');
-        return JSON.parse(raw) as MealPlanAiResponse;
-      }
-    } catch (error: unknown) {
-      this.logger.warn(
-        { error, cacheKey },
-        'Cache GET failed, proceeding without cache',
-      );
-    }
+Rules:
+- All human-readable text MUST be in language: "${responseLanguage}"
+- canonical units MUST be consistent (e.g. "g", "ml", "pcs", "tbsp", "tsp")
+- localized units MUST match the response language and culinary norms
+- quantity MUST be numbers only
+- cookingTime MUST be a number (minutes)
+- instructions MUST be an array of ordered steps starting from 1 (3-10 steps)
+- Each step.text MUST be a concise, clear sentence
+- Do NOT repeat ingredient quantities in instructions
+- Instructions MUST be suitable for home cooking, no professional techniques
+- Instructions MUST describe concrete actions (e.g., cut, fry, boil, mix)
+- Do not use ranges, approximations, or "to taste"
+- Use metric system
+${this.buildCategoryRule(categories)}
+`,
+    };
+  }
 
-    return this.deduplicated(cacheKey, async () => {
-      this.logger.log(
-        { cacheKey, queryLength: userQuery.length, responseLanguage },
-        'AI cache MISS: generateMealPlanFromUserQuery',
-      );
-
-      const categoryBlock =
-        categories.length > 0
-          ? `\nAvailable product categories:\n${categories.map((c) => `- "${c.slug}" (${c.name})`).join('\n')}\n`
-          : '';
-
-      const prompt = `
+  private buildMealPlanConfig(
+    userQuery: string,
+    responseLanguage: string,
+    categories: { slug: string; name: string }[],
+  ): AiCallConfig {
+    return {
+      cacheKey: generateCacheKey('generate', {
+        v: PROMPT_VERSIONS.generate,
+        model: 'gpt-5-mini',
+        query: userQuery,
+        lang: responseLanguage,
+        categories,
+      }),
+      cacheTtlKey: 'AI_CACHE_TTL_GENERATE',
+      cacheTtlDefault: 3600,
+      model: 'gpt-5-mini',
+      systemMessage:
+        'You are a multilingual culinary planner and data analyst. You strictly follow schemas and return valid JSON only.',
+      responseFormat: MEAL_PLAN_RESPONSE_FORMAT,
+      prompt: `
 User query (can be in any language):
 "${userQuery}"
-${categoryBlock}
+${this.buildCategoryBlock(categories)}
 Your task:
 1. Understand the user's intent regardless of query language
 2. Determine:
@@ -434,250 +273,20 @@ Rules:
 - Instructions MUST describe concrete actions (e.g., cut, fry, boil, mix)
 - Do not use ranges, approximations, or "to taste"
 - Use metric system
-${categories.length > 0 ? '- categorySlug MUST be one of the provided category slugs, or null if no category fits' : '- categorySlug MUST be null (no categories provided)'}
-`;
-
-      const result = await this.callAndParseJson<MealPlanAiResponse>(
-        () =>
-          this.openai.chat.completions.create({
-            model: 'gpt-5-mini',
-            response_format: {
-              type: 'json_schema',
-              json_schema: {
-                name: 'meal_plan',
-                strict: true,
-                schema: {
-                  type: 'object',
-                  properties: {
-                    parsedRequest: {
-                      type: 'object',
-                      properties: {
-                        numberOfPeople: { type: 'number' },
-                        numberOfDays: { type: 'number' },
-                        dietaryRestrictions: {
-                          type: 'array',
-                          items: { type: 'string' },
-                        },
-                        mealType: { type: ['string', 'null'] },
-                      },
-                      required: [
-                        'numberOfPeople',
-                        'numberOfDays',
-                        'dietaryRestrictions',
-                        'mealType',
-                      ],
-                      additionalProperties: false,
-                    },
-                    description: {
-                      type: 'string',
-                      description:
-                        'Short summary of the meal plan theme/goal (1-2 sentences)',
-                    },
-                    recipes: {
-                      type: 'array',
-                      items: RECIPE_SCHEMA,
-                    },
-                  },
-                  required: ['parsedRequest', 'description', 'recipes'],
-                  additionalProperties: false,
-                },
-              },
-            },
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'You are a multilingual culinary planner and data analyst. You strictly follow schemas and return valid JSON only.',
-              },
-              {
-                role: 'user',
-                content: prompt,
-              },
-            ],
-          }),
-        'generateMealPlan',
-      );
-
-      this.logger.log(
-        {
-          numberOfPeople: result.parsedRequest.numberOfPeople,
-          numberOfDays: result.parsedRequest.numberOfDays,
-          recipesCount: result.recipes.length,
-        },
-        'Meal plan generated successfully',
-      );
-
-      const ttl = this.configService.get<number>('AI_CACHE_TTL_GENERATE', 3600);
-      try {
-        await this.redis.set(cacheKey, JSON.stringify(result), 'EX', ttl);
-      } catch (error: unknown) {
-        this.logger.warn({ error, cacheKey }, 'Cache SET failed');
-      }
-
-      return result;
-    });
+${this.buildCategoryRule(categories)}
+`,
+    };
   }
 
-  async generateSingleRecipe(
-    dishQuery: string,
-    responseLanguage: string = 'uk',
-    categories: { slug: string; name: string }[] = [],
-  ): Promise<SingleRecipeAiResponse> {
-    const cacheKey = generateCacheKey('generate-single', {
-      v: PROMPT_VERSIONS.generate,
-      model: 'gpt-5-mini',
-      query: dishQuery,
-      lang: responseLanguage,
-      categories,
-    });
-
-    try {
-      const raw = await this.redis.get(cacheKey);
-      if (raw) {
-        this.logger.log({ cacheKey }, 'AI cache HIT: generateSingleRecipe');
-        return JSON.parse(raw) as SingleRecipeAiResponse;
-      }
-    } catch (error: unknown) {
-      this.logger.warn(
-        { error, cacheKey },
-        'Cache GET failed, proceeding without cache',
-      );
-    }
-
-    return this.deduplicated(cacheKey, async () => {
-      this.logger.log(
-        { cacheKey, queryLength: dishQuery.length, responseLanguage },
-        'AI cache MISS: generateSingleRecipe',
-      );
-
-      const categoryBlock =
-        categories.length > 0
-          ? `\nAvailable product categories:\n${categories.map((c) => `- "${c.slug}" (${c.name})`).join('\n')}\n`
-          : '';
-
-      const prompt = `
-User query (can be in any language):
-"${dishQuery}"
-${categoryBlock}
-Your task:
-1. Understand the user's intent regardless of query language
-2. Determine how many people the dish is for (default: 2 if not specified)
-3. Generate one classic, realistic recipe for the requested dish
-4. Calculate ingredient quantities for the determined number of people
-${categories.length > 0 ? '5. Assign the most appropriate category to each ingredient from the provided list' : ''}
-
-Rules:
-- All human-readable text MUST be in language: "${responseLanguage}"
-- canonical units MUST be consistent (e.g. "g", "ml", "pcs", "tbsp", "tsp")
-- localized units MUST match the response language and culinary norms
-- quantity MUST be numbers only
-- cookingTime MUST be a number (minutes)
-- instructions MUST be an array of ordered steps starting from 1 (3-10 steps)
-- Each step.text MUST be a concise, clear sentence
-- Do NOT repeat ingredient quantities in instructions
-- Instructions MUST be suitable for home cooking, no professional techniques
-- Instructions MUST describe concrete actions (e.g., cut, fry, boil, mix)
-- Do not use ranges, approximations, or "to taste"
-- Use metric system
-${categories.length > 0 ? '- categorySlug MUST be one of the provided category slugs, or null if no category fits' : '- categorySlug MUST be null (no categories provided)'}
-`;
-
-      const result = await this.callAndParseJson<SingleRecipeAiResponse>(
-        () =>
-          this.openai.chat.completions.create({
-            model: 'gpt-5-mini',
-            response_format: {
-              type: 'json_schema',
-              json_schema: {
-                name: 'single_recipe',
-                strict: true,
-                schema: {
-                  type: 'object',
-                  properties: {
-                    numberOfPeople: { type: 'number' },
-                    recipe: RECIPE_SCHEMA,
-                  },
-                  required: ['numberOfPeople', 'recipe'],
-                  additionalProperties: false,
-                },
-              },
-            },
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'You are a multilingual culinary expert. You generate detailed, realistic recipes. You strictly follow schemas and return valid JSON only.',
-              },
-              {
-                role: 'user',
-                content: prompt,
-              },
-            ],
-          }),
-        'generateSingleRecipe',
-      );
-
-      this.logger.log(
-        {
-          numberOfPeople: result.numberOfPeople,
-          dishName: result.recipe.dishName,
-          ingredientsCount: result.recipe.ingredients.length,
-        },
-        'Single recipe generated successfully',
-      );
-
-      const ttl = this.configService.get<number>('AI_CACHE_TTL_GENERATE', 3600);
-      try {
-        await this.redis.set(cacheKey, JSON.stringify(result), 'EX', ttl);
-      } catch (error: unknown) {
-        this.logger.warn({ error, cacheKey }, 'Cache SET failed');
-      }
-
-      return result;
-    });
-  }
-
-  async suggestRecipesFromIngredients(
+  private buildSuggestRecipesConfig(
     ingredients: string[],
-    responseLanguage: string = 'uk',
-    strictMode: boolean = false,
-  ): Promise<SuggestRecipesResponse> {
-    const cacheKey = generateCacheKey('suggest', {
-      v: PROMPT_VERSIONS.suggest,
-      model: 'gpt-5-mini',
-      ingredients,
-      lang: responseLanguage,
-      strict: strictMode,
-    });
+    responseLanguage: string,
+    strictMode: boolean,
+  ): AiCallConfig {
+    const ingredientsList = ingredients.join(', ');
 
-    try {
-      const raw = await this.redis.get(cacheKey);
-      if (raw) {
-        this.logger.log({ cacheKey }, 'AI cache HIT: suggestRecipes');
-        return JSON.parse(raw) as SuggestRecipesResponse;
-      }
-    } catch (error: unknown) {
-      this.logger.warn(
-        { error, cacheKey },
-        'Cache GET failed, proceeding without cache',
-      );
-    }
-
-    return this.deduplicated(cacheKey, async () => {
-      this.logger.log(
-        {
-          cacheKey,
-          ingredientsCount: ingredients.length,
-          responseLanguage,
-          strictMode,
-        },
-        'AI cache MISS: suggestRecipesFromIngredients',
-      );
-
-      const ingredientsList = ingredients.join(', ');
-
-      const strictModeBlock = strictMode
-        ? `
+    const strictModeBlock = strictMode
+      ? `
 Ingredient mode: STRICT
 - You MUST use ONLY the provided ingredients.
 - Allowed basic staples (even if not in the list): salt, pepper, water, oil, butter.
@@ -685,13 +294,27 @@ Ingredient mode: STRICT
 - All basic staples used MUST still appear in additionalIngredients.
 - additionalIngredients MUST be empty if only provided ingredients are used.
 - If no realistic recipe can be made, return an empty suggestedRecipes array.`
-        : `
+      : `
 Ingredient mode: FLEXIBLE
 - The recipe MUST be primarily based on the available ingredients.
 - You MAY add additional ingredients if needed for a complete recipe.
 - Prioritize recipes that require FEWER additional ingredients.`;
 
-      const prompt = `
+    return {
+      cacheKey: generateCacheKey('suggest', {
+        v: PROMPT_VERSIONS.suggest,
+        model: 'gpt-5-mini',
+        ingredients,
+        lang: responseLanguage,
+        strict: strictMode,
+      }),
+      cacheTtlKey: 'AI_CACHE_TTL_SUGGEST',
+      cacheTtlDefault: 3600,
+      model: 'gpt-5-mini',
+      systemMessage:
+        'You are a creative culinary assistant and recipe analyzer. You suggest realistic recipes based on available ingredients. You strictly follow schemas and return valid JSON only.',
+      responseFormat: SUGGEST_RECIPES_RESPONSE_FORMAT,
+      prompt: `
 Available ingredients (can be in any language):
 ${ingredientsList}
 ${strictModeBlock}
@@ -728,75 +351,194 @@ Rules:
 - Realistic quantities for home cooking
 - Avoid leaving out obvious usable ingredients without a reason
 - Before returning the JSON, internally verify that all rules above are satisfied
-`;
+`,
+    };
+  }
 
-      const result = await this.callAndParseJson<SuggestRecipesResponse>(
-        () =>
-          this.openai.chat.completions.create({
-            model: 'gpt-5-mini',
-            response_format: {
-              type: 'json_schema',
-              json_schema: {
-                name: 'suggest_recipes',
-                strict: true,
-                schema: {
-                  type: 'object',
-                  properties: {
-                    suggestedRecipes: {
-                      type: 'array',
-                      items: {
-                        type: 'object',
-                        properties: {
-                          dishName: { type: 'string' },
-                          description: { type: 'string' },
-                          ingredients: {
-                            type: 'array',
-                            items: RECIPE_INGREDIENT_SCHEMA,
-                          },
-                          instructions: {
-                            type: 'array',
-                            items: INSTRUCTION_STEP_SCHEMA,
-                          },
-                          cookingTime: { type: 'number' },
-                          matchedIngredients: {
-                            type: 'array',
-                            items: { type: 'string' },
-                          },
-                          additionalIngredients: {
-                            type: 'array',
-                            items: { type: 'string' },
-                          },
-                        },
-                        required: [
-                          'dishName',
-                          'description',
-                          'ingredients',
-                          'instructions',
-                          'cookingTime',
-                          'matchedIngredients',
-                          'additionalIngredients',
-                        ],
-                        additionalProperties: false,
-                      },
-                    },
-                  },
-                  required: ['suggestedRecipes'],
-                  additionalProperties: false,
-                },
-              },
-            },
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'You are a creative culinary assistant and recipe analyzer. You suggest realistic recipes based on available ingredients. You strictly follow schemas and return valid JSON only.',
-              },
-              {
-                role: 'user',
-                content: prompt,
-              },
-            ],
-          }),
+  // ==================== PUBLIC METHODS (non-streamed) ====================
+
+  async extractIngredientsFromRecipe(
+    recipeText: string,
+    responseLanguage: string = 'uk',
+    categories: { slug: string; name: string }[] = [],
+  ): Promise<Ingredient[]> {
+    const config = this.buildExtractIngredientsConfig(
+      recipeText,
+      responseLanguage,
+      categories,
+    );
+
+    const cached = await this.client.cacheGet<Ingredient[]>(
+      config.cacheKey,
+      'extractIngredients',
+    );
+    if (cached) return cached;
+
+    return this.client.deduplicated(config.cacheKey, async () => {
+      this.logger.log(
+        {
+          cacheKey: config.cacheKey,
+          recipeTextLength: recipeText.length,
+          responseLanguage,
+          categoriesCount: categories.length,
+        },
+        'AI cache MISS: extractIngredientsFromRecipe',
+      );
+
+      const parsed = await this.client.callAndParseJson<{
+        ingredients: Ingredient[];
+      }>(config, 'extractIngredients');
+
+      this.logger.log(
+        { ingredientsCount: parsed.ingredients.length },
+        'Ingredients extracted successfully',
+      );
+
+      await this.client.cacheSet(
+        config.cacheKey,
+        parsed.ingredients,
+        config.cacheTtlKey,
+        config.cacheTtlDefault,
+      );
+
+      return parsed.ingredients;
+    });
+  }
+
+  async generateMealPlanFromUserQuery(
+    userQuery: string,
+    responseLanguage: string = 'uk',
+    categories: { slug: string; name: string }[] = [],
+  ): Promise<MealPlanAiResponse> {
+    const config = this.buildMealPlanConfig(
+      userQuery,
+      responseLanguage,
+      categories,
+    );
+
+    const cached = await this.client.cacheGet<MealPlanAiResponse>(
+      config.cacheKey,
+      'generateMealPlan',
+    );
+    if (cached) return cached;
+
+    return this.client.deduplicated(config.cacheKey, async () => {
+      this.logger.log(
+        {
+          cacheKey: config.cacheKey,
+          queryLength: userQuery.length,
+          responseLanguage,
+        },
+        'AI cache MISS: generateMealPlanFromUserQuery',
+      );
+
+      const result = await this.client.callAndParseJson<MealPlanAiResponse>(
+        config,
+        'generateMealPlan',
+      );
+
+      this.logger.log(
+        {
+          numberOfPeople: result.parsedRequest.numberOfPeople,
+          numberOfDays: result.parsedRequest.numberOfDays,
+          recipesCount: result.recipes.length,
+        },
+        'Meal plan generated successfully',
+      );
+
+      await this.client.cacheSet(
+        config.cacheKey,
+        result,
+        config.cacheTtlKey,
+        config.cacheTtlDefault,
+      );
+
+      return result;
+    });
+  }
+
+  async generateSingleRecipe(
+    dishQuery: string,
+    responseLanguage: string = 'uk',
+    categories: { slug: string; name: string }[] = [],
+  ): Promise<SingleRecipeAiResponse> {
+    const config = this.buildSingleRecipeConfig(
+      dishQuery,
+      responseLanguage,
+      categories,
+    );
+
+    const cached = await this.client.cacheGet<SingleRecipeAiResponse>(
+      config.cacheKey,
+      'generateSingleRecipe',
+    );
+    if (cached) return cached;
+
+    return this.client.deduplicated(config.cacheKey, async () => {
+      this.logger.log(
+        {
+          cacheKey: config.cacheKey,
+          queryLength: dishQuery.length,
+          responseLanguage,
+        },
+        'AI cache MISS: generateSingleRecipe',
+      );
+
+      const result = await this.client.callAndParseJson<SingleRecipeAiResponse>(
+        config,
+        'generateSingleRecipe',
+      );
+
+      this.logger.log(
+        {
+          numberOfPeople: result.numberOfPeople,
+          dishName: result.recipe.dishName,
+          ingredientsCount: result.recipe.ingredients.length,
+        },
+        'Single recipe generated successfully',
+      );
+
+      await this.client.cacheSet(
+        config.cacheKey,
+        result,
+        config.cacheTtlKey,
+        config.cacheTtlDefault,
+      );
+
+      return result;
+    });
+  }
+
+  async suggestRecipesFromIngredients(
+    ingredients: string[],
+    responseLanguage: string = 'uk',
+    strictMode: boolean = false,
+  ): Promise<SuggestRecipesResponse> {
+    const config = this.buildSuggestRecipesConfig(
+      ingredients,
+      responseLanguage,
+      strictMode,
+    );
+
+    const cached = await this.client.cacheGet<SuggestRecipesResponse>(
+      config.cacheKey,
+      'suggestRecipes',
+    );
+    if (cached) return cached;
+
+    return this.client.deduplicated(config.cacheKey, async () => {
+      this.logger.log(
+        {
+          cacheKey: config.cacheKey,
+          ingredientsCount: ingredients.length,
+          responseLanguage,
+          strictMode,
+        },
+        'AI cache MISS: suggestRecipesFromIngredients',
+      );
+
+      const result = await this.client.callAndParseJson<SuggestRecipesResponse>(
+        config,
         'suggestRecipes',
       );
 
@@ -819,18 +561,16 @@ Rules:
       });
 
       this.logger.log(
-        {
-          recipesCount: result.suggestedRecipes.length,
-        },
+        { recipesCount: result.suggestedRecipes.length },
         'Recipes suggested successfully',
       );
 
-      const ttl = this.configService.get<number>('AI_CACHE_TTL_SUGGEST', 3600);
-      try {
-        await this.redis.set(cacheKey, JSON.stringify(result), 'EX', ttl);
-      } catch (error: unknown) {
-        this.logger.warn({ error, cacheKey }, 'Cache SET failed');
-      }
+      await this.client.cacheSet(
+        config.cacheKey,
+        result,
+        config.cacheTtlKey,
+        config.cacheTtlDefault,
+      );
 
       return result;
     });
@@ -848,20 +588,13 @@ Rules:
       categories,
     });
 
-    try {
-      const raw = await this.redis.get(cacheKey);
-      if (raw) {
-        this.logger.log({ cacheKey }, 'AI cache HIT: categorizeItems');
-        return JSON.parse(raw) as ItemCategoryMapping[];
-      }
-    } catch (error: unknown) {
-      this.logger.warn(
-        { error, cacheKey },
-        'Cache GET failed, proceeding without cache',
-      );
-    }
+    const cached = await this.client.cacheGet<ItemCategoryMapping[]>(
+      cacheKey,
+      'categorizeItems',
+    );
+    if (cached) return cached;
 
-    return this.deduplicated(cacheKey, async () => {
+    return this.client.deduplicated(cacheKey, async () => {
       this.logger.log(
         {
           cacheKey,
@@ -889,56 +622,50 @@ Rules:
   - 0.5–0.8: minor ambiguity between categories
   - <0.5: uncertain or no good match`;
 
-      const parsed = await this.callAndParseJson<{
+      const parsed = await this.client.callAndParseJson<{
         mappings: ItemCategoryMapping[];
       }>(
-        () =>
-          this.openai.chat.completions.create({
-            model: 'gpt-4.1-mini',
-            temperature: 0.1,
-            response_format: {
-              type: 'json_schema',
-              json_schema: {
-                name: 'item_category_mapping',
-                strict: true,
-                schema: {
-                  type: 'object',
-                  properties: {
-                    mappings: {
-                      type: 'array',
-                      items: {
-                        type: 'object',
-                        properties: {
-                          itemId: { type: 'string' },
-                          categoryId: { type: ['string', 'null'] },
-                          confidence: {
-                            type: 'number',
-                            minimum: 0,
-                            maximum: 1,
-                          },
+        {
+          cacheKey,
+          cacheTtlKey: 'AI_CACHE_TTL_CATEGORIZE',
+          cacheTtlDefault: 604800,
+          model: 'gpt-4.1-mini',
+          temperature: 0.1,
+          systemMessage:
+            'You are a grocery product categorization engine. Return valid JSON only.',
+          prompt,
+          responseFormat: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'item_category_mapping',
+              strict: true,
+              schema: {
+                type: 'object',
+                properties: {
+                  mappings: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        itemId: { type: 'string' },
+                        categoryId: { type: ['string', 'null'] },
+                        confidence: {
+                          type: 'number',
+                          minimum: 0,
+                          maximum: 1,
                         },
-                        required: ['itemId', 'categoryId', 'confidence'],
-                        additionalProperties: false,
                       },
+                      required: ['itemId', 'categoryId', 'confidence'],
+                      additionalProperties: false,
                     },
                   },
-                  required: ['mappings'],
-                  additionalProperties: false,
                 },
+                required: ['mappings'],
+                additionalProperties: false,
               },
             },
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'You are a grocery product categorization engine. Return valid JSON only.',
-              },
-              {
-                role: 'user',
-                content: prompt,
-              },
-            ],
-          }),
+          },
+        },
         'categorizeItems',
       );
 
@@ -997,22 +724,188 @@ Rules:
         'Items categorized successfully',
       );
 
-      const ttl = this.configService.get<number>(
+      await this.client.cacheSet(
+        cacheKey,
+        parsed.mappings,
         'AI_CACHE_TTL_CATEGORIZE',
         604800,
       );
-      try {
-        await this.redis.set(
-          cacheKey,
-          JSON.stringify(parsed.mappings),
-          'EX',
-          ttl,
-        );
-      } catch (error: unknown) {
-        this.logger.warn({ error, cacheKey }, 'Cache SET failed');
-      }
 
       return parsed.mappings;
     });
+  }
+
+  // ==================== STREAMED VERSIONS ====================
+
+  async extractIngredientsFromRecipeStreamed(
+    recipeText: string,
+    responseLanguage: string = 'uk',
+    categories: { slug: string; name: string }[] = [],
+    onChunk: (delta: string) => void,
+  ): Promise<Ingredient[]> {
+    const config = this.buildExtractIngredientsConfig(
+      recipeText,
+      responseLanguage,
+      categories,
+    );
+
+    const cached = await this.client.cacheGet<Ingredient[]>(
+      config.cacheKey,
+      'extractIngredientsStreamed',
+    );
+    if (cached) return cached;
+
+    this.logger.log(
+      {
+        cacheKey: config.cacheKey,
+        recipeTextLength: recipeText.length,
+        responseLanguage,
+        categoriesCount: categories.length,
+      },
+      'AI cache MISS: extractIngredientsFromRecipeStreamed',
+    );
+
+    const parsed = await this.client.callStreamedJson<{
+      ingredients: Ingredient[];
+    }>(config, onChunk, 'extractIngredientsStreamed');
+
+    await this.client.cacheSet(
+      config.cacheKey,
+      parsed.ingredients,
+      config.cacheTtlKey,
+      config.cacheTtlDefault,
+    );
+
+    return parsed.ingredients;
+  }
+
+  async generateSingleRecipeStreamed(
+    dishQuery: string,
+    responseLanguage: string = 'uk',
+    categories: { slug: string; name: string }[] = [],
+    onChunk: (delta: string) => void,
+  ): Promise<SingleRecipeAiResponse> {
+    const config = this.buildSingleRecipeConfig(
+      dishQuery,
+      responseLanguage,
+      categories,
+    );
+
+    const cached = await this.client.cacheGet<SingleRecipeAiResponse>(
+      config.cacheKey,
+      'generateSingleRecipeStreamed',
+    );
+    if (cached) return cached;
+
+    this.logger.log(
+      {
+        cacheKey: config.cacheKey,
+        queryLength: dishQuery.length,
+        responseLanguage,
+      },
+      'AI cache MISS: generateSingleRecipeStreamed',
+    );
+
+    const result = await this.client.callStreamedJson<SingleRecipeAiResponse>(
+      config,
+      onChunk,
+      'generateSingleRecipeStreamed',
+    );
+
+    await this.client.cacheSet(
+      config.cacheKey,
+      result,
+      config.cacheTtlKey,
+      config.cacheTtlDefault,
+    );
+
+    return result;
+  }
+
+  async generateMealPlanStreamed(
+    userQuery: string,
+    responseLanguage: string = 'uk',
+    categories: { slug: string; name: string }[] = [],
+    onChunk: (delta: string) => void,
+  ): Promise<MealPlanAiResponse> {
+    const config = this.buildMealPlanConfig(
+      userQuery,
+      responseLanguage,
+      categories,
+    );
+
+    const cached = await this.client.cacheGet<MealPlanAiResponse>(
+      config.cacheKey,
+      'generateMealPlanStreamed',
+    );
+    if (cached) return cached;
+
+    this.logger.log(
+      {
+        cacheKey: config.cacheKey,
+        queryLength: userQuery.length,
+        responseLanguage,
+      },
+      'AI cache MISS: generateMealPlanStreamed',
+    );
+
+    const result = await this.client.callStreamedJson<MealPlanAiResponse>(
+      config,
+      onChunk,
+      'generateMealPlanStreamed',
+    );
+
+    await this.client.cacheSet(
+      config.cacheKey,
+      result,
+      config.cacheTtlKey,
+      config.cacheTtlDefault,
+    );
+
+    return result;
+  }
+
+  async suggestRecipesStreamed(
+    ingredients: string[],
+    responseLanguage: string = 'uk',
+    strictMode: boolean = false,
+    onChunk: (delta: string) => void,
+  ): Promise<SuggestRecipesResponse> {
+    const config = this.buildSuggestRecipesConfig(
+      ingredients,
+      responseLanguage,
+      strictMode,
+    );
+
+    const cached = await this.client.cacheGet<SuggestRecipesResponse>(
+      config.cacheKey,
+      'suggestRecipesStreamed',
+    );
+    if (cached) return cached;
+
+    this.logger.log(
+      {
+        cacheKey: config.cacheKey,
+        ingredientsCount: ingredients.length,
+        responseLanguage,
+        strictMode,
+      },
+      'AI cache MISS: suggestRecipesStreamed',
+    );
+
+    const result = await this.client.callStreamedJson<SuggestRecipesResponse>(
+      config,
+      onChunk,
+      'suggestRecipesStreamed',
+    );
+
+    await this.client.cacheSet(
+      config.cacheKey,
+      result,
+      config.cacheTtlKey,
+      config.cacheTtlDefault,
+    );
+
+    return result;
   }
 }

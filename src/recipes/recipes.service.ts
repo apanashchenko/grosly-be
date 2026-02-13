@@ -427,4 +427,81 @@ export class RecipesService {
       cookingTime: recipe.cookingTime,
     };
   }
+
+  // ==================== STREAMED AI OPERATIONS ====================
+
+  async generateSingleRecipeStreamed(
+    dto: GenerateSingleRecipeDto,
+    userId: string,
+    onChunk: (delta: string) => void,
+  ): Promise<SingleRecipeResponseDto> {
+    const categories = await this.categoriesService.findAll(userId);
+    const categoryMap = new Map(categories.map((cat) => [cat.slug, cat]));
+    const categoryHints = categories.map((cat) => ({
+      slug: cat.slug,
+      name: cat.name,
+    }));
+
+    const aiResponse = await this.aiService.generateSingleRecipeStreamed(
+      dto.query,
+      dto.language || 'uk',
+      categoryHints,
+      onChunk,
+    );
+
+    const { numberOfPeople } = aiResponse;
+    if (numberOfPeople < this.MIN_PEOPLE || numberOfPeople > this.MAX_PEOPLE) {
+      throw new BadRequestException(
+        `Number of people must be between ${this.MIN_PEOPLE} and ${this.MAX_PEOPLE}. ` +
+          `Received: ${numberOfPeople}.`,
+      );
+    }
+
+    return {
+      numberOfPeople,
+      recipe: this.mapRecipeCategories(aiResponse.recipe, categoryMap),
+    };
+  }
+
+  async generateMealPlanStreamed(
+    dto: GenerateMealPlanDto,
+    userId: string,
+    onChunk: (delta: string) => void,
+  ): Promise<MealPlanResponseDto> {
+    const categories = await this.categoriesService.findAll(userId);
+    const categoryMap = new Map(categories.map((cat) => [cat.slug, cat]));
+    const categoryHints = categories.map((cat) => ({
+      slug: cat.slug,
+      name: cat.name,
+    }));
+
+    const aiResponse = await this.aiService.generateMealPlanStreamed(
+      dto.query,
+      dto.language || 'uk',
+      categoryHints,
+      onChunk,
+    );
+
+    this.validateBusinessConstraints(aiResponse.parsedRequest);
+
+    return {
+      parsedRequest: aiResponse.parsedRequest,
+      description: aiResponse.description,
+      recipes: aiResponse.recipes.map((r) =>
+        this.mapRecipeCategories(r, categoryMap),
+      ),
+    };
+  }
+
+  async suggestRecipeStreamed(
+    dto: SuggestRecipeDto,
+    onChunk: (delta: string) => void,
+  ): Promise<SuggestRecipeResponseDto> {
+    return this.aiService.suggestRecipesStreamed(
+      dto.ingredients,
+      dto.language || 'uk',
+      dto.strictMode ?? false,
+      onChunk,
+    );
+  }
 }
