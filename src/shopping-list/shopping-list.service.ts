@@ -58,6 +58,8 @@ export class ShoppingListService {
       userId,
       spaceId,
       groupedByCategories: dto.groupedByCategories ?? false,
+      isPinned: dto.isPinned ?? false,
+      label: dto.label ?? null,
       items: dto.items.map((item, index) =>
         this.itemRepo.create({
           name: item.name,
@@ -148,6 +150,14 @@ export class ShoppingListService {
 
     if (dto.groupedByCategories !== undefined) {
       list.groupedByCategories = dto.groupedByCategories;
+    }
+
+    if (dto.isPinned !== undefined) {
+      list.isPinned = dto.isPinned;
+    }
+
+    if (dto.label !== undefined) {
+      list.label = dto.label;
     }
 
     if (dto.items !== undefined) {

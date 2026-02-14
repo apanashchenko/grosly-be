@@ -23,6 +23,12 @@ export class Plan {
   maxParseRequestsPerDay: number;
 
   @Column({ type: 'int', default: 0 })
+  maxParseImageRequestsPerDay: number;
+
+  @Column({ type: 'int', default: 0 })
+  maxSmartGroupRequestsPerDay: number;
+
+  @Column({ type: 'int', default: 0 })
   maxShoppingLists: number;
 
   @Column({ type: 'int', default: 0 })

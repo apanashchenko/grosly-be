@@ -32,6 +32,8 @@ import { CurrentUser } from '../auth/decorators';
 import { CurrentSpace } from '../spaces/decorators';
 import { User } from '../entities/user.entity';
 import { ShoppingList } from '../entities/shopping-list.entity';
+import { RequireUsageLimit } from '../subscription/decorators/require-usage-limit.decorator';
+import { UsageAction } from '../subscription/enums/usage-action.enum';
 
 @ApiTags('shopping-list')
 @ApiBearerAuth()
@@ -301,6 +303,7 @@ export class ShoppingListController {
   }
 
   @Post(':listId/smart-group')
+  @RequireUsageLimit(UsageAction.SMART_GROUP)
   @ApiOperation({
     summary: 'Smart group items by category',
     description:

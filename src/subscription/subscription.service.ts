@@ -26,6 +26,8 @@ const USAGE_ACTION_TO_PLAN_LIMIT: Record<UsageAction, keyof Plan> = {
   [UsageAction.RECIPE_PARSE]: 'maxParseRequestsPerDay',
   [UsageAction.RECIPE_SUGGEST]: 'maxRecipeGenerationsPerDay', // shares limit with generation
   [UsageAction.MEAL_PLAN_SAVE]: 'maxRecipeGenerationsPerDay', // shares limit with generation
+  [UsageAction.PARSE_IMAGE]: 'maxParseImageRequestsPerDay',
+  [UsageAction.SMART_GROUP]: 'maxSmartGroupRequestsPerDay',
 };
 
 @Injectable()

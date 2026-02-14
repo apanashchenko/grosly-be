@@ -258,7 +258,7 @@ export class RecipesController {
   }
 
   @Post('parse-image')
-  @RequireUsageLimit(UsageAction.RECIPE_PARSE)
+  @RequireUsageLimit(UsageAction.PARSE_IMAGE)
   @UseInterceptors(FileInterceptor('image'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({

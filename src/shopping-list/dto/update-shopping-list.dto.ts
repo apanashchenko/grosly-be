@@ -78,6 +78,28 @@ export class UpdateShoppingListDto {
   groupedByCategories?: boolean;
 
   @ApiPropertyOptional({
+    description: 'Whether the shopping list is pinned for the user',
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'isPinned must be a boolean' })
+  isPinned?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Short label for additional info',
+    example: 'Party',
+    maxLength: 20,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: string }) =>
+    value?.trim()?.replace(/<[^>]*>/g, ''),
+  )
+  @IsString({ message: 'label must be a string' })
+  @MinLength(1, { message: 'Label is too short (min 1 character)' })
+  @MaxLength(20, { message: 'Label is too long (max 20 characters)' })
+  label?: string;
+
+  @ApiPropertyOptional({
     description:
       'Batch update item positions (for reordering). Does not replace items, only updates positions of existing items by their ID.',
     type: [ItemPositionDto],

@@ -91,6 +91,19 @@ export class ShoppingListResponseDto {
   groupedByCategories: boolean;
 
   @ApiProperty({
+    description: 'Whether the shopping list is pinned for the user',
+    example: false,
+  })
+  isPinned: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Short label for additional info',
+    example: 'Party',
+    nullable: true,
+  })
+  label: string | null;
+
+  @ApiProperty({
     description: 'Version number for optimistic locking',
     example: 1,
   })
@@ -120,6 +133,8 @@ export class ShoppingListResponseDto {
     dto.name = entity.name;
     dto.spaceId = entity.spaceId ?? null;
     dto.groupedByCategories = entity.groupedByCategories;
+    dto.isPinned = entity.isPinned;
+    dto.label = entity.label ?? null;
     dto.version = entity.version;
     dto.items = (entity.items || [])
       .sort((a, b) => a.position - b.position)

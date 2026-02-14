@@ -40,6 +40,12 @@ export class ShoppingList {
   @Column({ default: false })
   groupedByCategories: boolean;
 
+  @Column({ default: false })
+  isPinned: boolean;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  label: string | null;
+
   @VersionColumn({ default: 1 })
   version: number;
 
