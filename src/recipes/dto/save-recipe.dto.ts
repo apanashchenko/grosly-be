@@ -61,6 +61,16 @@ export class RecipeIngredientItemDto {
   unit: string;
 
   @ApiPropertyOptional({
+    description: 'Additional note (e.g. "to taste")',
+    example: 'to taste',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100, { message: 'Note is too long (max 100 characters)' })
+  note?: string | null;
+
+  @ApiPropertyOptional({
     description: 'Category UUID',
     example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
   })

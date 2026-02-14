@@ -15,7 +15,10 @@ export class InvitationResponseDto {
   @ApiProperty({ example: 'John Doe' })
   inviterName: string;
 
-  @ApiProperty({ example: 'https://lh3.googleusercontent.com/a/example', nullable: true })
+  @ApiProperty({
+    example: 'https://lh3.googleusercontent.com/a/example',
+    nullable: true,
+  })
   inviterAvatarUrl: string | null;
 
   @ApiProperty({ enum: InvitationStatus })

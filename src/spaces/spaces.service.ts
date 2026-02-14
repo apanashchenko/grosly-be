@@ -283,10 +283,7 @@ export class SpacesService {
 
     await this.invitationRepo.remove(invitation);
 
-    this.logger.log(
-      { spaceId, invitationId },
-      'Space invitation cancelled',
-    );
+    this.logger.log({ spaceId, invitationId }, 'Space invitation cancelled');
   }
 
   async getSpaceInvitations(

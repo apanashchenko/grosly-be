@@ -27,6 +27,13 @@ export class RecipeIngredientResponseDto {
   @ApiProperty({ example: 'pcs' })
   unit: string;
 
+  @ApiPropertyOptional({
+    description: 'Additional note (e.g. "to taste")',
+    example: null,
+    nullable: true,
+  })
+  note: string | null;
+
   @ApiPropertyOptional({ type: IngredientCategoryDto, nullable: true })
   category: IngredientCategoryDto | null;
 
@@ -39,6 +46,7 @@ export class RecipeIngredientResponseDto {
     dto.name = entity.name;
     dto.quantity = Number(entity.quantity);
     dto.unit = entity.unit;
+    dto.note = entity.note;
     dto.category = entity.category
       ? {
           id: entity.category.id,

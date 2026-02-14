@@ -12,6 +12,7 @@ export interface AiCallConfig {
   temperature?: number;
   systemMessage: string;
   prompt: string;
+  imageBase64?: string;
   responseFormat?: OpenAI.Chat.Completions.ChatCompletionCreateParams['response_format'];
 }
 
@@ -37,10 +38,7 @@ export class AiClientService {
    * If a call is already in-flight for the same key, returns the existing promise
    * instead of starting a duplicate OpenAI request.
    */
-  async deduplicated<T>(
-    cacheKey: string,
-    fn: () => Promise<T>,
-  ): Promise<T> {
+  async deduplicated<T>(cacheKey: string, fn: () => Promise<T>): Promise<T> {
     const existing = this.inFlight.get(cacheKey);
     if (existing) {
       this.logger.log({ cacheKey }, 'In-flight dedup HIT');
@@ -205,6 +203,22 @@ export class AiClientService {
 
   // ==================== PRIVATE ====================
 
+  private buildUserMessage(
+    config: AiCallConfig,
+  ): string | OpenAI.Chat.Completions.ChatCompletionContentPart[] {
+    if (!config.imageBase64) {
+      return config.prompt;
+    }
+
+    return [
+      {
+        type: 'image_url' as const,
+        image_url: { url: config.imageBase64, detail: 'high' as const },
+      },
+      { type: 'text' as const, text: config.prompt },
+    ];
+  }
+
   private createCompletion(config: AiCallConfig) {
     return this.openai.chat.completions.create({
       model: config.model,
@@ -216,7 +230,7 @@ export class AiClientService {
       }),
       messages: [
         { role: 'system' as const, content: config.systemMessage },
-        { role: 'user' as const, content: config.prompt },
+        { role: 'user' as const, content: this.buildUserMessage(config) },
       ],
     });
   }
@@ -232,7 +246,7 @@ export class AiClientService {
       }),
       messages: [
         { role: 'system' as const, content: config.systemMessage },
-        { role: 'user' as const, content: config.prompt },
+        { role: 'user' as const, content: this.buildUserMessage(config) },
       ],
     });
   }

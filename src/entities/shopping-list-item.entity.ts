@@ -34,6 +34,9 @@ export class ShoppingListItem {
   @Column({ type: 'uuid', nullable: true })
   categoryId: string | null;
 
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  note: string | null;
+
   @Column({ type: 'int', default: 0 })
   position: number;
 

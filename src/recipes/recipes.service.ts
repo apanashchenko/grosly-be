@@ -9,10 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { paginate, Paginated, PaginationType } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
-import {
-  AiService,
-  Recipe as AiRecipe,
-} from '../ai/ai.service';
+import { AiService, Recipe as AiRecipe } from '../ai/ai.service';
 import { CategoriesService } from '../categories/categories.service';
 import { Category } from '../entities/category.entity';
 import { Recipe } from '../entities/recipe.entity';
@@ -32,6 +29,7 @@ import {
 } from './dto/suggest-recipe.dto';
 import { SaveRecipeDto, UpdateRecipeDto } from './dto/save-recipe.dto';
 import { RecipeResponseDto } from './dto/recipe-response.dto';
+import { RecipeSource } from './enums/recipe-source.enum';
 
 @Injectable()
 export class RecipesService {
@@ -71,6 +69,7 @@ export class RecipesService {
           name: ing.name,
           quantity: ing.quantity,
           unit: ing.unit,
+          note: ing.note ?? null,
           categoryId: ing.categoryId ?? null,
           position: index,
         }),
@@ -148,6 +147,7 @@ export class RecipesService {
           name: ing.name,
           quantity: ing.quantity,
           unit: ing.unit,
+          note: ing.note ?? null,
           categoryId: ing.categoryId ?? null,
           position: index,
         }),
@@ -199,19 +199,80 @@ export class RecipesService {
       name: cat.name,
     }));
 
-    const ingredients = await this.aiService.extractIngredientsFromRecipe(
+    const aiResult = await this.aiService.extractIngredientsFromRecipe(
       parseRecipeDto.recipeText,
       'uk',
       categoryHints,
     );
 
+    if (aiResult.error) {
+      throw new BadRequestException(aiResult.error);
+    }
+
     this.logger.log(
-      { ingredientsCount: ingredients.length },
+      { ingredientsCount: aiResult.ingredients.length },
       'Recipe parsed successfully',
     );
 
     return {
-      ingredients: ingredients.map((ing) => {
+      source: RecipeSource.PARSED,
+      recipeText: aiResult.recipeText,
+      ingredients: aiResult.ingredients.map((ing) => {
+        const cat = ing.categorySlug
+          ? (categoryMap.get(ing.categorySlug) ?? null)
+          : null;
+        return {
+          name: ing.name,
+          quantity: ing.quantity,
+          unit: ing.unit?.canonical ?? '',
+          localizedUnit: ing.unit?.localized ?? '',
+          note: ing.note,
+          categoryId: cat?.id ?? null,
+        };
+      }),
+    };
+  }
+
+  async parseRecipeImage(
+    file: { buffer: Buffer; mimetype: string; size: number },
+    userId: string,
+  ): Promise<ParseRecipeResponseDto> {
+    this.logger.debug(
+      { imageSizeKb: Math.round(file.size / 1024), mimeType: file.mimetype },
+      'Parsing recipe from image',
+    );
+
+    const categories = await this.categoriesService.findAll(userId);
+
+    const categoryMap = new Map<string, Category>(
+      categories.map((cat) => [cat.slug, cat]),
+    );
+
+    const categoryHints = categories.map((cat) => ({
+      slug: cat.slug,
+      name: cat.name,
+    }));
+
+    const aiResult = await this.aiService.extractIngredientsFromImage(
+      file.buffer,
+      file.mimetype,
+      'uk',
+      categoryHints,
+    );
+
+    if (aiResult.error) {
+      throw new BadRequestException(aiResult.error);
+    }
+
+    this.logger.log(
+      { ingredientsCount: aiResult.ingredients.length },
+      'Recipe parsed from image successfully',
+    );
+
+    return {
+      source: RecipeSource.PARSED_IMAGE,
+      recipeText: aiResult.recipeText,
+      ingredients: aiResult.ingredients.map((ing) => {
         const cat = ing.categorySlug
           ? (categoryMap.get(ing.categorySlug) ?? null)
           : null;

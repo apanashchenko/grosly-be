@@ -36,6 +36,13 @@ class ShoppingListItemResponseDto {
   @ApiProperty({ description: 'Unit of measurement', example: 'pcs' })
   unit: string;
 
+  @ApiPropertyOptional({
+    description: 'Additional note (e.g. "to taste")',
+    example: null,
+    nullable: true,
+  })
+  note: string | null;
+
   @ApiProperty({ description: 'Whether the product has been purchased' })
   purchased: boolean;
 
@@ -121,6 +128,7 @@ export class ShoppingListResponseDto {
         name: item.name,
         quantity: Number(item.quantity),
         unit: item.unit,
+        note: item.note,
         purchased: item.purchased,
         category: item.category
           ? {

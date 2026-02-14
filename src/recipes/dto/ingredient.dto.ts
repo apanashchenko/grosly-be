@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { RecipeSource } from '../enums/recipe-source.enum';
 
 export class IngredientDto {
   @ApiProperty({
@@ -44,6 +45,22 @@ export class IngredientDto {
 }
 
 export class ParseRecipeResponseDto {
+  @ApiProperty({
+    description:
+      'Source of the parsed recipe (PARSED for text, PARSED_IMAGE for image)',
+    enum: RecipeSource,
+    example: RecipeSource.PARSED,
+  })
+  source: RecipeSource;
+
+  @ApiProperty({
+    description:
+      'Clean, formatted recipe text including dish name, ingredients and instructions',
+    example:
+      'Борщ\n\nІнгредієнти:\n- Буряк — 2 шт\n- Картопля — 3 шт\n...\n\nПриготування:\n1. Очистити овочі...',
+  })
+  recipeText: string;
+
   @ApiProperty({
     description: 'List of ingredients from recipe',
     type: [IngredientDto],

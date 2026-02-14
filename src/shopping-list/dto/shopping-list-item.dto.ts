@@ -56,6 +56,16 @@ export class ShoppingListItemDto {
   unit: string;
 
   @ApiPropertyOptional({
+    description: 'Additional note (e.g. "to taste")',
+    example: 'to taste',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100, { message: 'Note is too long (max 100 characters)' })
+  note?: string | null;
+
+  @ApiPropertyOptional({
     description: 'Whether the product has been purchased',
     example: false,
     default: false,

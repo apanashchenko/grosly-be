@@ -1,3 +1,4 @@
+/// <reference types="multer" />
 import {
   Controller,
   Post,
@@ -10,13 +11,21 @@ import {
   ParseUUIDPipe,
   ValidationPipe,
   Logger,
+  UseInterceptors,
+  UploadedFile,
+  ParseFilePipe,
+  MaxFileSizeValidator,
+  FileTypeValidator,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import * as express from 'express';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { Paginate, Paginated } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
@@ -176,6 +185,52 @@ export class RecipesController {
     @Body(new ValidationPipe()) parseRecipeDto: ParseRecipeDto,
   ): Promise<ParseRecipeResponseDto> {
     return this.recipesService.parseRecipe(parseRecipeDto, user.id);
+  }
+
+  @Post('parse-image')
+  @RequireUsageLimit(UsageAction.RECIPE_PARSE)
+  @UseInterceptors(FileInterceptor('image'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Parse recipe from image',
+    description:
+      'Extracts ingredient list from a recipe screenshot/photo using AI vision',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['image'],
+      properties: {
+        image: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Ingredient list successfully extracted from image',
+    type: ParseRecipeResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid request (missing image, wrong format, or too large)',
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error or OpenAI API error',
+  })
+  async parseRecipeImage(
+    @CurrentUser() user: User,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /^image\/(jpeg|png|webp)$/ }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ): Promise<ParseRecipeResponseDto> {
+    return this.recipesService.parseRecipeImage(file, user.id);
   }
 
   @Post('single')

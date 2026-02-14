@@ -39,7 +39,10 @@ export class MealPlanResponseDto {
   @ApiProperty({ example: 'Weekly dinner plan' })
   name: string;
 
-  @ApiPropertyOptional({ nullable: true, example: 'Healthy meals for the week' })
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Healthy meals for the week',
+  })
   description: string | null;
 
   @ApiProperty({ example: 3 })
@@ -94,7 +97,10 @@ export class MealPlanListItemDto {
   @ApiProperty({ example: 'Weekly dinner plan' })
   name: string;
 
-  @ApiPropertyOptional({ nullable: true, example: 'Healthy meals for the week' })
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Healthy meals for the week',
+  })
   description: string | null;
 
   @ApiProperty({ example: 3 })

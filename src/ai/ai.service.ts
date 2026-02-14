@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { generateCacheKey } from '../cache/cache-key.util';
 import { AiClientService, AiCallConfig } from './ai-client.service';
 import {
@@ -75,6 +76,12 @@ export interface SuggestRecipesResponse {
   suggestedRecipes: SuggestedRecipe[];
 }
 
+export interface ParseRecipeAiResponse {
+  recipeText: string;
+  ingredients: Ingredient[];
+  error?: string;
+}
+
 export interface ItemCategoryMapping {
   itemId: string;
   categoryId: string | null;
@@ -82,7 +89,8 @@ export interface ItemCategoryMapping {
 }
 
 const PROMPT_VERSIONS = {
-  parse: 'v1',
+  parse: 'v6',
+  parseImage: 'v6',
   generate: 'v1',
   suggest: 'v1',
   categorize: 'v1',
@@ -138,14 +146,24 @@ ${recipeText}
 """
 ${this.buildCategoryBlock(categories)}
 Your task:
-1. Understand the recipe text regardless of language
-2. Extract ALL mentioned ingredients exactly as written
-3. Normalize units where possible
-${categories.length > 0 ? '4. Assign the most appropriate category to each ingredient from the provided list' : ''}
+1. First, determine if the text is a recipe or contains a list of ingredients
+2. If the text is NOT a recipe and does NOT contain ingredients, return an error response (see below)
+3. If the text IS a recipe or contains ingredients:
+   a. Extract ALL mentioned ingredients exactly as written
+   b. Normalize units where possible
+${categories.length > 0 ? '   c. Assign the most appropriate category to each ingredient from the provided list' : ''}
+   ${categories.length > 0 ? 'd' : 'c'}. Create a clean, well-formatted version of the recipe text
 
-Return ONLY valid JSON in the following format:
-
+If the text is NOT a recipe and does NOT contain ingredients, return:
 {
+  "recipeText": "",
+  "ingredients": [],
+  "error": string (a short user-friendly message in language "${responseLanguage}" explaining that the provided text does not appear to be a recipe and ingredients could not be extracted)
+}
+
+If the text IS a recipe or contains ingredients, return:
+{
+  "recipeText": string,
   "ingredients": [
     {
       "name": string,
@@ -161,13 +179,114 @@ Return ONLY valid JSON in the following format:
 }
 
 Rules:
+- recipeText MUST be a clean, well-formatted version of the original recipe in language: "${responseLanguage}"
+- recipeText MUST include the dish name, ingredient list with quantities, and step-by-step cooking instructions
+- recipeText MUST use plain text with line breaks for readability (no markdown, no HTML)
+- Ingredient "name" MUST contain ONLY the pure product name (e.g. "cheese", "onion", "pepper")
+- Do NOT include qualifiers, clarifications, or serving notes in "name"
+- Move ALL extra info into "note": purpose ("for serving", "for marinade"), optionality ("optional"), size/type ("large", "red"), preparation ("diced", "grated")
+- Examples:
+  - "cheese for serving, optional" → name: "cheese", note: "for serving, optional"
+  - "large onion sliced into rings" → name: "onion", note: "large, sliced into rings"
+  - "red pepper" → name: "pepper", note: "red"
+  - "olive oil" → name: "olive oil", note: null (it is a single product name)
+- If the qualifier is part of the product identity (e.g. "olive oil", "soy sauce", "butter"), keep it in "name"
 - Ingredient names MUST be in language: "${responseLanguage}"
+- note MUST be in language: "${responseLanguage}" (e.g. "optional", "for serving", "large", "diced" — translated to "${responseLanguage}")
 - localized unit MUST be in language: "${responseLanguage}"
 - canonical unit MUST be a neutral identifier (e.g. "g", "ml", "pcs", "tbsp", "tsp")
-- If quantity is not specified or ingredient is "to taste":
+- If quantity is not specified or ingredient is "to taste" / "by taste" / similar:
   - set quantity = null
   - set unit = null
-  - set note = "to taste" (localized in "${responseLanguage}")
+  - set note = the equivalent phrase in language "${responseLanguage}" (do NOT use English)
+- Do NOT invent quantities
+- Do NOT use ranges (1-2, a few, some)
+- Use metric system where possible
+${categories.length > 0 ? '- categorySlug MUST be one of the provided category slugs, or null if no category fits\n- Pick the most semantically appropriate category for each ingredient' : '- categorySlug MUST be null (no categories provided)'}
+- Return JSON ONLY, no markdown, no explanations
+`,
+    };
+  }
+
+  private buildExtractIngredientsFromImageConfig(
+    imageBase64: string,
+    imageHash: string,
+    responseLanguage: string,
+    categories: { slug: string; name: string }[],
+  ): AiCallConfig {
+    return {
+      cacheKey: generateCacheKey('parse-image', {
+        v: PROMPT_VERSIONS.parseImage,
+        model: 'gpt-4.1-mini',
+        temp: 0.3,
+        imageHash,
+        lang: responseLanguage,
+        categories,
+      }),
+      cacheTtlKey: 'AI_CACHE_TTL_PARSE',
+      cacheTtlDefault: 21600,
+      model: 'gpt-4.1-mini',
+      temperature: 0.3,
+      systemMessage:
+        'You are a culinary image analyst. You extract ingredients from recipe images/screenshots. You strictly follow schemas and return valid JSON only.',
+      imageBase64,
+      prompt: `
+Analyze the image above.
+${this.buildCategoryBlock(categories)}
+Your task:
+1. First, determine if the image contains a recipe or a list of ingredients
+2. If the image does NOT contain a recipe or ingredients, return an error response (see below)
+3. If the image DOES contain a recipe or ingredients:
+   a. Extract ALL mentioned ingredients exactly as written
+   b. Normalize units where possible
+${categories.length > 0 ? '   c. Assign the most appropriate category to each ingredient from the provided list' : ''}
+   ${categories.length > 0 ? 'd' : 'c'}. Create a clean, well-formatted version of the recipe text from the image
+
+If the image does NOT contain a recipe or ingredients, return:
+{
+  "recipeText": "",
+  "ingredients": [],
+  "error": string (a short user-friendly message in language "${responseLanguage}" explaining that the image does not appear to contain a recipe and ingredients could not be extracted)
+}
+
+If the image DOES contain a recipe or ingredients, return:
+{
+  "recipeText": string,
+  "ingredients": [
+    {
+      "name": string,
+      "quantity": number | null,
+      "unit": {
+        "canonical": string,
+        "localized": string
+      } | null,
+      "note": string | null,
+      "categorySlug": string | null
+    }
+  ]
+}
+
+Rules:
+- recipeText MUST be a clean, well-formatted version of the recipe from the image in language: "${responseLanguage}"
+- recipeText MUST include the dish name, ingredient list with quantities, and step-by-step cooking instructions
+- recipeText MUST use plain text with line breaks for readability (no markdown, no HTML)
+- Ingredient "name" MUST contain ONLY the pure product name (e.g. "cheese", "onion", "pepper")
+- Do NOT include qualifiers, clarifications, or serving notes in "name"
+- Move ALL extra info into "note": purpose ("for serving", "for marinade"), optionality ("optional"), size/type ("large", "red"), preparation ("diced", "grated")
+- Examples:
+  - "cheese for serving, optional" → name: "cheese", note: "for serving, optional"
+  - "large onion sliced into rings" → name: "onion", note: "large, sliced into rings"
+  - "red pepper" → name: "pepper", note: "red"
+  - "olive oil" → name: "olive oil", note: null (it is a single product name)
+- If the qualifier is part of the product identity (e.g. "olive oil", "soy sauce", "butter"), keep it in "name"
+- Ingredient names MUST be in language: "${responseLanguage}"
+- note MUST be in language: "${responseLanguage}" (e.g. "optional", "for serving", "large", "diced" — translated to "${responseLanguage}")
+- localized unit MUST be in language: "${responseLanguage}"
+- canonical unit MUST be a neutral identifier (e.g. "g", "ml", "pcs", "tbsp", "tsp")
+- If quantity is not specified or ingredient is "to taste" / "by taste" / similar:
+  - set quantity = null
+  - set unit = null
+  - set note = the equivalent phrase in language "${responseLanguage}" (do NOT use English)
 - Do NOT invent quantities
 - Do NOT use ranges (1-2, a few, some)
 - Use metric system where possible
@@ -361,14 +480,14 @@ Rules:
     recipeText: string,
     responseLanguage: string = 'uk',
     categories: { slug: string; name: string }[] = [],
-  ): Promise<Ingredient[]> {
+  ): Promise<ParseRecipeAiResponse> {
     const config = this.buildExtractIngredientsConfig(
       recipeText,
       responseLanguage,
       categories,
     );
 
-    const cached = await this.client.cacheGet<Ingredient[]>(
+    const cached = await this.client.cacheGet<ParseRecipeAiResponse>(
       config.cacheKey,
       'extractIngredients',
     );
@@ -385,23 +504,91 @@ Rules:
         'AI cache MISS: extractIngredientsFromRecipe',
       );
 
-      const parsed = await this.client.callAndParseJson<{
-        ingredients: Ingredient[];
-      }>(config, 'extractIngredients');
+      const parsed = await this.client.callAndParseJson<ParseRecipeAiResponse>(
+        config,
+        'extractIngredients',
+      );
 
       this.logger.log(
-        { ingredientsCount: parsed.ingredients.length },
+        { ingredientsCount: parsed.ingredients.length, error: parsed.error },
         'Ingredients extracted successfully',
       );
 
+      const result: ParseRecipeAiResponse = {
+        recipeText: parsed.recipeText,
+        ingredients: parsed.ingredients,
+        ...(parsed.error && { error: parsed.error }),
+      };
+
       await this.client.cacheSet(
         config.cacheKey,
-        parsed.ingredients,
+        result,
         config.cacheTtlKey,
         config.cacheTtlDefault,
       );
 
-      return parsed.ingredients;
+      return result;
+    });
+  }
+
+  async extractIngredientsFromImage(
+    imageBuffer: Buffer,
+    mimeType: string,
+    responseLanguage: string = 'uk',
+    categories: { slug: string; name: string }[] = [],
+  ): Promise<ParseRecipeAiResponse> {
+    const imageBase64 = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+    const imageHash = createHash('sha256').update(imageBuffer).digest('hex');
+
+    const config = this.buildExtractIngredientsFromImageConfig(
+      imageBase64,
+      imageHash,
+      responseLanguage,
+      categories,
+    );
+
+    const cached = await this.client.cacheGet<ParseRecipeAiResponse>(
+      config.cacheKey,
+      'extractIngredientsFromImage',
+    );
+    if (cached) return cached;
+
+    return this.client.deduplicated(config.cacheKey, async () => {
+      this.logger.log(
+        {
+          cacheKey: config.cacheKey,
+          imageHash,
+          imageSizeKb: Math.round(imageBuffer.length / 1024),
+          responseLanguage,
+          categoriesCount: categories.length,
+        },
+        'AI cache MISS: extractIngredientsFromImage',
+      );
+
+      const parsed = await this.client.callAndParseJson<ParseRecipeAiResponse>(
+        config,
+        'extractIngredientsFromImage',
+      );
+
+      this.logger.log(
+        { ingredientsCount: parsed.ingredients.length, error: parsed.error },
+        'Ingredients extracted from image successfully',
+      );
+
+      const result: ParseRecipeAiResponse = {
+        recipeText: parsed.recipeText,
+        ingredients: parsed.ingredients,
+        ...(parsed.error && { error: parsed.error }),
+      };
+
+      await this.client.cacheSet(
+        config.cacheKey,
+        result,
+        config.cacheTtlKey,
+        config.cacheTtlDefault,
+      );
+
+      return result;
     });
   }
 
@@ -742,14 +929,14 @@ Rules:
     responseLanguage: string = 'uk',
     categories: { slug: string; name: string }[] = [],
     onChunk: (delta: string) => void,
-  ): Promise<Ingredient[]> {
+  ): Promise<ParseRecipeAiResponse> {
     const config = this.buildExtractIngredientsConfig(
       recipeText,
       responseLanguage,
       categories,
     );
 
-    const cached = await this.client.cacheGet<Ingredient[]>(
+    const cached = await this.client.cacheGet<ParseRecipeAiResponse>(
       config.cacheKey,
       'extractIngredientsStreamed',
     );
@@ -765,18 +952,26 @@ Rules:
       'AI cache MISS: extractIngredientsFromRecipeStreamed',
     );
 
-    const parsed = await this.client.callStreamedJson<{
-      ingredients: Ingredient[];
-    }>(config, onChunk, 'extractIngredientsStreamed');
+    const parsed = await this.client.callStreamedJson<ParseRecipeAiResponse>(
+      config,
+      onChunk,
+      'extractIngredientsStreamed',
+    );
+
+    const result: ParseRecipeAiResponse = {
+      recipeText: parsed.recipeText,
+      ingredients: parsed.ingredients,
+      ...(parsed.error && { error: parsed.error }),
+    };
 
     await this.client.cacheSet(
       config.cacheKey,
-      parsed.ingredients,
+      result,
       config.cacheTtlKey,
       config.cacheTtlDefault,
     );
 
-    return parsed.ingredients;
+    return result;
   }
 
   async generateSingleRecipeStreamed(

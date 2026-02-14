@@ -59,10 +59,7 @@ export class MealPlansService {
       await this.linkRecipes(saved.id, recipeIds);
     }
 
-    this.logger.log(
-      { id: saved.id, name: saved.name },
-      'Meal plan created',
-    );
+    this.logger.log({ id: saved.id, name: saved.name }, 'Meal plan created');
 
     const result = await this.findOneEntity(userId, saved.id);
     return MealPlanResponseDto.fromEntity(result);
@@ -82,10 +79,7 @@ export class MealPlansService {
     });
   }
 
-  async findOne(
-    userId: string,
-    id: string,
-  ): Promise<MealPlanResponseDto> {
+  async findOne(userId: string, id: string): Promise<MealPlanResponseDto> {
     const mealPlan = await this.findOneEntity(userId, id);
     return MealPlanResponseDto.fromEntity(mealPlan);
   }
@@ -168,10 +162,7 @@ export class MealPlansService {
     }
   }
 
-  private async findOneEntity(
-    userId: string,
-    id: string,
-  ): Promise<MealPlan> {
+  private async findOneEntity(userId: string, id: string): Promise<MealPlan> {
     const mealPlan = await this.mealPlanRepo.findOne({
       where: { id },
       relations: [

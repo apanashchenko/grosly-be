@@ -63,6 +63,7 @@ export class ShoppingListService {
           name: item.name,
           quantity: item.quantity,
           unit: item.unit,
+          note: item.note ?? null,
           purchased: item.purchased ?? false,
           categoryId: item.categoryId ?? null,
           position: index,
@@ -157,6 +158,7 @@ export class ShoppingListService {
           name: item.name,
           quantity: item.quantity,
           unit: item.unit,
+          note: item.note ?? null,
           purchased: item.purchased ?? false,
           position: index,
           createdByUserId: userId,
@@ -211,6 +213,7 @@ export class ShoppingListService {
         name: item.name,
         quantity: item.quantity,
         unit: item.unit,
+        note: item.note ?? null,
         purchased: item.purchased ?? false,
         categoryId: item.categoryId ?? null,
         position: maxPosition + 1 + index,
@@ -242,6 +245,7 @@ export class ShoppingListService {
     if (dto.name !== undefined) item.name = dto.name;
     if (dto.quantity !== undefined) item.quantity = dto.quantity;
     if (dto.unit !== undefined) item.unit = dto.unit;
+    if (dto.note !== undefined) item.note = dto.note;
     if (dto.purchased !== undefined) item.purchased = dto.purchased;
     if (dto.categoryId !== undefined) item.categoryId = dto.categoryId;
     if (dto.position !== undefined) item.position = dto.position;
@@ -307,7 +311,24 @@ export class ShoppingListService {
         return list;
       }
 
-      const itemsForAi = list.items.map((item) => ({
+      const uncategorizedItems = list.items.filter(
+        (item) => item.categoryId === null,
+      );
+
+      if (uncategorizedItems.length === 0) {
+        await this.shoppingListRepo.update(listId, {
+          groupedByCategories: true,
+        });
+
+        this.logger.log(
+          { listId, itemsGrouped: 0 },
+          'All items already categorized, skipping AI call',
+        );
+
+        return this.findOne(userId, listId, spaceId);
+      }
+
+      const itemsForAi = uncategorizedItems.map((item) => ({
         id: item.id,
         name: item.name,
       }));
@@ -329,7 +350,7 @@ export class ShoppingListService {
       let lowConfidenceCount = 0;
 
       for (const mapping of mappings) {
-        const item = list.items.find((i) => i.id === mapping.itemId);
+        const item = uncategorizedItems.find((i) => i.id === mapping.itemId);
         if (!item) continue;
 
         if (mapping.confidence < 0.6) {
@@ -347,7 +368,7 @@ export class ShoppingListService {
         }
       }
 
-      await this.itemRepo.save(list.items);
+      await this.itemRepo.save(uncategorizedItems);
 
       if (lowConfidenceCount > 0) {
         this.logger.warn(
@@ -361,7 +382,12 @@ export class ShoppingListService {
       });
 
       this.logger.log(
-        { listId, itemsGrouped: mappings.length },
+        {
+          listId,
+          totalItems: list.items.length,
+          itemsGrouped: uncategorizedItems.length,
+          alreadyCategorized: list.items.length - uncategorizedItems.length,
+        },
         'Shopping list smart grouped',
       );
 
