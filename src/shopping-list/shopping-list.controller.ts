@@ -17,6 +17,7 @@ import {
   ApiParam,
   ApiBearerAuth,
   ApiHeader,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { Paginate, Paginated } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
@@ -49,7 +50,13 @@ export class ShoppingListController {
   @ApiOperation({
     summary: 'Get all shopping lists',
     description:
-      'Returns paginated shopping lists belonging to the authenticated user (or space if X-Space-Id header is set), ordered by creation date (newest first). Supports cursor-based pagination via limit and cursor query params.',
+      'Returns paginated shopping lists belonging to the authenticated user (or space if X-Space-Id header is set), ordered by creation date (newest first). Supports cursor-based pagination and search by name.',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Search shopping lists by name (case-insensitive)',
+    example: 'groceries',
   })
   @ApiResponse({
     status: 200,

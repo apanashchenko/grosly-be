@@ -8,6 +8,7 @@ import {
   Body,
   Param,
   Res,
+  HttpCode,
   ParseUUIDPipe,
   ValidationPipe,
   Logger,
@@ -26,6 +27,7 @@ import {
   ApiBearerAuth,
   ApiConsumes,
   ApiBody,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { Paginate, Paginated } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
@@ -42,7 +44,11 @@ import {
   SuggestRecipeDto,
   SuggestRecipeResponseDto,
 } from './dto/suggest-recipe.dto';
-import { SaveRecipeDto, UpdateRecipeDto } from './dto/save-recipe.dto';
+import {
+  SaveRecipeDto,
+  UpdateRecipeDto,
+  UpdateRecipeIngredientDto,
+} from './dto/save-recipe.dto';
 import {
   RecipeResponseDto,
   RecipeListItemDto,
@@ -87,7 +93,26 @@ export class RecipesController {
   @ApiOperation({
     summary: 'Get all saved recipes',
     description:
-      "Returns user's saved recipes list (lightweight, without full data). Supports cursor-based pagination via limit and cursor query params.",
+      "Returns user's saved recipes list (lightweight, without full data). Supports cursor-based pagination, search by title, and filtering by source.",
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Search recipes by title (case-insensitive)',
+    example: 'borscht',
+  })
+  @ApiQuery({
+    name: 'filter.source',
+    required: false,
+    enum: [
+      'PARSED',
+      'PARSED_IMAGE',
+      'GENERATED',
+      'SUGGESTED',
+      'MEAL_PLAN',
+      'MANUAL',
+    ],
+    description: 'Filter by recipe source',
   })
   @ApiResponse({
     status: 200,
@@ -156,6 +181,51 @@ export class RecipesController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
     return await this.recipesService.delete(user.id, id);
+  }
+
+  @Patch(':recipeId/ingredients/:ingredientId')
+  @ApiOperation({
+    summary: 'Update a single recipe ingredient',
+    description: 'Partially updates a single ingredient in a saved recipe',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Ingredient updated, returns full recipe',
+    type: RecipeResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Recipe or ingredient not found' })
+  async updateIngredient(
+    @CurrentUser() user: User,
+    @Param('recipeId', ParseUUIDPipe) recipeId: string,
+    @Param('ingredientId', ParseUUIDPipe) ingredientId: string,
+    @Body(new ValidationPipe()) dto: UpdateRecipeIngredientDto,
+  ): Promise<RecipeResponseDto> {
+    return await this.recipesService.updateIngredient(
+      user.id,
+      recipeId,
+      ingredientId,
+      dto,
+    );
+  }
+
+  @Delete(':recipeId/ingredients/:ingredientId')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Remove a single recipe ingredient',
+    description: 'Removes a single ingredient from a saved recipe',
+  })
+  @ApiResponse({ status: 204, description: 'Ingredient removed' })
+  @ApiResponse({ status: 404, description: 'Recipe or ingredient not found' })
+  async removeIngredient(
+    @CurrentUser() user: User,
+    @Param('recipeId', ParseUUIDPipe) recipeId: string,
+    @Param('ingredientId', ParseUUIDPipe) ingredientId: string,
+  ): Promise<void> {
+    return await this.recipesService.removeIngredient(
+      user.id,
+      recipeId,
+      ingredientId,
+    );
   }
 
   // ==================== AI RECIPE OPERATIONS ====================

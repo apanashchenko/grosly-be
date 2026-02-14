@@ -7,7 +7,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { paginate, Paginated, PaginationType } from 'nestjs-paginate';
+import {
+  paginate,
+  Paginated,
+  PaginationType,
+  FilterOperator,
+} from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
 import { AiService, Recipe as AiRecipe } from '../ai/ai.service';
 import { CategoriesService } from '../categories/categories.service';
@@ -27,7 +32,11 @@ import {
   SuggestRecipeDto,
   SuggestRecipeResponseDto,
 } from './dto/suggest-recipe.dto';
-import { SaveRecipeDto, UpdateRecipeDto } from './dto/save-recipe.dto';
+import {
+  SaveRecipeDto,
+  UpdateRecipeDto,
+  UpdateRecipeIngredientDto,
+} from './dto/save-recipe.dto';
 import { RecipeResponseDto } from './dto/recipe-response.dto';
 import { RecipeSource } from './enums/recipe-source.enum';
 
@@ -98,6 +107,10 @@ export class RecipesService {
     return paginate(query, this.recipeRepo, {
       sortableColumns: ['createdAt', 'id'],
       defaultSortBy: [['createdAt', 'DESC']],
+      searchableColumns: ['title'],
+      filterableColumns: {
+        source: [FilterOperator.EQ],
+      },
       paginationType: PaginationType.CURSOR,
       where: { userId },
     });
@@ -175,6 +188,73 @@ export class RecipesService {
     await this.recipeRepo.remove(recipe);
 
     this.logger.log({ id }, 'Recipe deleted');
+  }
+
+  async updateIngredient(
+    userId: string,
+    recipeId: string,
+    ingredientId: string,
+    dto: UpdateRecipeIngredientDto,
+  ): Promise<RecipeResponseDto> {
+    const recipe = await this.recipeRepo.findOne({ where: { id: recipeId } });
+
+    if (!recipe) {
+      throw new NotFoundException(`Recipe ${recipeId} not found`);
+    }
+
+    if (recipe.userId !== userId) {
+      throw new ForbiddenException();
+    }
+
+    const ingredient = this.findIngredientInRecipe(recipe, ingredientId);
+
+    if (dto.name !== undefined) ingredient.name = dto.name;
+    if (dto.quantity !== undefined) ingredient.quantity = dto.quantity;
+    if (dto.unit !== undefined) ingredient.unit = dto.unit;
+    if (dto.note !== undefined) ingredient.note = dto.note;
+    if (dto.categoryId !== undefined) ingredient.categoryId = dto.categoryId;
+    if (dto.position !== undefined) ingredient.position = dto.position;
+
+    await this.ingredientRepo.save(ingredient);
+
+    this.logger.log({ recipeId, ingredientId }, 'Recipe ingredient updated');
+
+    return this.findOne(userId, recipeId);
+  }
+
+  async removeIngredient(
+    userId: string,
+    recipeId: string,
+    ingredientId: string,
+  ): Promise<void> {
+    const recipe = await this.recipeRepo.findOne({ where: { id: recipeId } });
+
+    if (!recipe) {
+      throw new NotFoundException(`Recipe ${recipeId} not found`);
+    }
+
+    if (recipe.userId !== userId) {
+      throw new ForbiddenException();
+    }
+
+    const ingredient = this.findIngredientInRecipe(recipe, ingredientId);
+
+    await this.ingredientRepo.remove(ingredient);
+
+    this.logger.log({ recipeId, ingredientId }, 'Recipe ingredient removed');
+  }
+
+  private findIngredientInRecipe(
+    recipe: Recipe,
+    ingredientId: string,
+  ): RecipeIngredient {
+    const ingredient = recipe.ingredients.find((i) => i.id === ingredientId);
+    if (!ingredient) {
+      throw new NotFoundException(
+        `Ingredient ${ingredientId} not found in recipe ${recipe.id}`,
+      );
+    }
+    return ingredient;
   }
 
   // ==================== AI RECIPE OPERATIONS ====================

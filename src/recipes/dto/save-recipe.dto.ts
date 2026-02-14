@@ -170,3 +170,78 @@ export class UpdateRecipeDto {
   @Type(() => RecipeIngredientItemDto)
   ingredients?: RecipeIngredientItemDto[];
 }
+
+export class UpdateRecipeIngredientDto {
+  @ApiPropertyOptional({
+    description: 'Ingredient name',
+    example: 'beetroot',
+    minLength: 1,
+    maxLength: 200,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: string }) =>
+    value?.trim()?.replace(/<[^>]*>/g, ''),
+  )
+  @IsString()
+  @IsNotEmpty({ message: 'Ingredient name cannot be empty' })
+  @MinLength(1, { message: 'Ingredient name is too short (min 1 character)' })
+  @MaxLength(200, {
+    message: 'Ingredient name is too long (max 200 characters)',
+  })
+  @Matches(/^[^<>{}[\]\\$#@`|~^&;]+$/, {
+    message: 'Ingredient name contains forbidden characters',
+  })
+  name?: string;
+
+  @ApiPropertyOptional({
+    description: 'Quantity',
+    example: 2,
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsNumber({}, { message: 'Quantity must be a number' })
+  @Min(0, { message: 'Quantity cannot be negative' })
+  quantity?: number;
+
+  @ApiPropertyOptional({
+    description: 'Unit of measurement',
+    example: 'pcs',
+    maxLength: 50,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: string }) =>
+    value?.trim()?.replace(/<[^>]*>/g, ''),
+  )
+  @IsString()
+  @MaxLength(50, { message: 'Unit is too long (max 50 characters)' })
+  unit?: string;
+
+  @ApiPropertyOptional({
+    description: 'Additional note (e.g. "to taste")',
+    example: 'to taste',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100, { message: 'Note is too long (max 100 characters)' })
+  note?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Category UUID (send null to clear)',
+    example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsUUID('4', { message: 'categoryId must be a valid UUID' })
+  categoryId?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Position for ordering',
+    example: 0,
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsNumber({}, { message: 'Position must be a number' })
+  @Min(0, { message: 'Position cannot be negative' })
+  position?: number;
+}

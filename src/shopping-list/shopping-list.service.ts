@@ -95,6 +95,7 @@ export class ShoppingListService {
     return paginate(query, this.shoppingListRepo, {
       sortableColumns: ['createdAt', 'id'],
       defaultSortBy: [['createdAt', 'DESC']],
+      searchableColumns: ['name'],
       paginationType: PaginationType.CURSOR,
       loadEagerRelations: true,
       relations: ['items', 'items.category', 'items.createdBy'],
