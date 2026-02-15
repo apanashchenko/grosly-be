@@ -285,8 +285,8 @@ export class ShoppingListService {
 
     await this.itemRepo.remove(item);
 
-    // Bump version on the list
-    await this.shoppingListRepo.save(list);
+    // Bump version without cascade save to avoid re-creating the removed item
+    await this.shoppingListRepo.increment({ id: list.id }, 'version', 1);
 
     this.logger.info({ listId: list.id, itemId }, 'Shopping list item removed');
   }
