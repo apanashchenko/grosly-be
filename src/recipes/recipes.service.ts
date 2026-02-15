@@ -427,14 +427,16 @@ export class RecipesService {
     this.logger.info(
       {
         numberOfPeople,
-        dishName: aiResponse.recipe.dishName,
+        recipesCount: aiResponse.recipes.length,
       },
       'Single recipe generated successfully',
     );
 
     return {
       numberOfPeople,
-      recipe: this.mapRecipeCategories(aiResponse.recipe, categoryMap),
+      recipes: aiResponse.recipes.map((recipe) =>
+        this.mapRecipeCategories(recipe, categoryMap),
+      ),
     };
   }
 
@@ -476,7 +478,7 @@ export class RecipesService {
       {
         numberOfPeople: aiResponse.parsedRequest.numberOfPeople,
         numberOfDays: aiResponse.parsedRequest.numberOfDays,
-        recipesCount: aiResponse.recipes.length,
+        daysCount: aiResponse.days.length,
       },
       'Meal plan generated successfully',
     );
@@ -484,9 +486,12 @@ export class RecipesService {
     return {
       parsedRequest: aiResponse.parsedRequest,
       description: aiResponse.description,
-      recipes: aiResponse.recipes.map((r) =>
-        this.mapRecipeCategories(r, categoryMap),
-      ),
+      days: aiResponse.days.map((day) => ({
+        dayNumber: day.dayNumber,
+        recipes: day.recipes.map((r) =>
+          this.mapRecipeCategories(r, categoryMap),
+        ),
+      })),
     };
   }
 
@@ -547,6 +552,13 @@ export class RecipesService {
       'Suggesting recipes from available ingredients',
     );
 
+    const categories = await this.categoriesService.findAll(userId);
+    const categoryMap = new Map(categories.map((cat) => [cat.slug, cat]));
+    const categoryHints = categories.map((cat) => ({
+      slug: cat.slug,
+      name: cat.name,
+    }));
+
     const result = await this.aiRequestLogService.logRequest({
       userId,
       action: UsageAction.RECIPE_SUGGEST,
@@ -556,6 +568,7 @@ export class RecipesService {
           suggestRecipeDto.ingredients,
           suggestRecipeDto.language || 'uk',
           suggestRecipeDto.strictMode ?? false,
+          categoryHints,
         ),
     });
 
@@ -581,7 +594,19 @@ export class RecipesService {
       'Recipes suggested successfully',
     );
 
-    return result;
+    return {
+      suggestedRecipes: result.suggestedRecipes.map((recipe) => ({
+        ...recipe,
+        ingredients: recipe.ingredients.map((ing) => ({
+          name: ing.name,
+          quantity: ing.quantity,
+          unit: ing.unit,
+          categoryId: ing.categorySlug
+            ? (categoryMap.get(ing.categorySlug)?.id ?? null)
+            : null,
+        })),
+      })),
+    };
   }
 
   private mapRecipeCategories(
@@ -641,7 +666,9 @@ export class RecipesService {
 
     return {
       numberOfPeople,
-      recipe: this.mapRecipeCategories(aiResponse.recipe, categoryMap),
+      recipes: aiResponse.recipes.map((recipe) =>
+        this.mapRecipeCategories(recipe, categoryMap),
+      ),
     };
   }
 
@@ -675,9 +702,12 @@ export class RecipesService {
     return {
       parsedRequest: aiResponse.parsedRequest,
       description: aiResponse.description,
-      recipes: aiResponse.recipes.map((r) =>
-        this.mapRecipeCategories(r, categoryMap),
-      ),
+      days: aiResponse.days.map((day) => ({
+        dayNumber: day.dayNumber,
+        recipes: day.recipes.map((r) =>
+          this.mapRecipeCategories(r, categoryMap),
+        ),
+      })),
     };
   }
 
@@ -686,7 +716,14 @@ export class RecipesService {
     userId: string,
     onChunk: (delta: string) => void,
   ): Promise<SuggestRecipeResponseDto> {
-    return this.aiRequestLogService.logRequest({
+    const categories = await this.categoriesService.findAll(userId);
+    const categoryMap = new Map(categories.map((cat) => [cat.slug, cat]));
+    const categoryHints = categories.map((cat) => ({
+      slug: cat.slug,
+      name: cat.name,
+    }));
+
+    const result = await this.aiRequestLogService.logRequest({
       userId,
       action: UsageAction.RECIPE_SUGGEST,
       input: dto.ingredients.join(', '),
@@ -695,8 +732,23 @@ export class RecipesService {
           dto.ingredients,
           dto.language || 'uk',
           dto.strictMode ?? false,
+          categoryHints,
           onChunk,
         ),
     });
+
+    return {
+      suggestedRecipes: result.suggestedRecipes.map((recipe) => ({
+        ...recipe,
+        ingredients: recipe.ingredients.map((ing) => ({
+          name: ing.name,
+          quantity: ing.quantity,
+          unit: ing.unit,
+          categoryId: ing.categorySlug
+            ? (categoryMap.get(ing.categorySlug)?.id ?? null)
+            : null,
+        })),
+      })),
+    };
   }
 }

@@ -5,10 +5,12 @@ import {
   IsArray,
   IsNotEmpty,
   IsNumber,
+  IsInt,
   IsUUID,
   MaxLength,
   MinLength,
   Min,
+  Max,
   ArrayMinSize,
   ArrayMaxSize,
   ValidateNested,
@@ -127,6 +129,19 @@ export class SaveRecipeDto {
   @IsString()
   @MaxLength(5000)
   originalInput?: string;
+
+  @ApiPropertyOptional({
+    description: 'Day number in a meal plan (defaults to 1)',
+    example: 1,
+    default: 1,
+    minimum: 1,
+    maximum: 7,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1, { message: 'Day number must be at least 1' })
+  @Max(7, { message: 'Day number must be at most 7' })
+  dayNumber?: number;
 
   @ApiProperty({
     description: 'Recipe ingredients',

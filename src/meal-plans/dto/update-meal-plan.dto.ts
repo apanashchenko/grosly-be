@@ -5,14 +5,37 @@ import {
   IsUUID,
   IsArray,
   ArrayMaxSize,
+  ValidateNested,
   Min,
   Max,
   MinLength,
   MaxLength,
   Matches,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export class UpdateMealPlanRecipeDto {
+  @ApiProperty({
+    description: 'Recipe UUID',
+    example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+  })
+  @IsUUID('4', { message: 'recipeId must be a valid UUID' })
+  recipeId: string;
+
+  @ApiPropertyOptional({
+    description: 'Day number in the meal plan (defaults to 1)',
+    example: 1,
+    default: 1,
+    minimum: 1,
+    maximum: 7,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1, { message: 'Day number must be at least 1' })
+  @Max(7, { message: 'Day number must be at most 7' })
+  dayNumber?: number;
+}
 
 export class UpdateMealPlanDto {
   @ApiPropertyOptional({
@@ -59,13 +82,13 @@ export class UpdateMealPlanDto {
   numberOfPeople?: number;
 
   @ApiPropertyOptional({
-    description: 'Recipe UUIDs (full replace)',
-    example: ['f47ac10b-58cc-4372-a567-0e02b2c3d479'],
-    type: [String],
+    description: 'Recipes with day assignments (full replace)',
+    type: [UpdateMealPlanRecipeDto],
   })
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(21)
-  @IsUUID('4', { each: true })
-  recipes?: string[];
+  @ValidateNested({ each: true })
+  @Type(() => UpdateMealPlanRecipeDto)
+  recipes?: UpdateMealPlanRecipeDto[];
 }

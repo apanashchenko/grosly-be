@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,7 +14,10 @@ import { MealPlanRecipe } from '../entities/meal-plan-recipe.entity';
 import { Recipe } from '../entities/recipe.entity';
 import { RecipesService } from '../recipes/recipes.service';
 import { CreateMealPlanDto } from './dto/create-meal-plan.dto';
-import { UpdateMealPlanDto } from './dto/update-meal-plan.dto';
+import {
+  UpdateMealPlanDto,
+  UpdateMealPlanRecipeDto,
+} from './dto/update-meal-plan.dto';
 import { MealPlanResponseDto } from './dto/meal-plan-response.dto';
 
 @Injectable()
@@ -49,15 +53,18 @@ export class MealPlansService {
     const saved = await this.mealPlanRepo.save(mealPlan);
 
     if (dto.recipes?.length) {
-      const recipeIds: string[] = [];
+      const recipeLinks: { recipeId: string; dayNumber: number }[] = [];
       for (const recipeDto of dto.recipes) {
         const savedRecipe = await this.recipesService.saveRecipe(
           userId,
           recipeDto,
         );
-        recipeIds.push(savedRecipe.id);
+        recipeLinks.push({
+          recipeId: savedRecipe.id,
+          dayNumber: recipeDto.dayNumber ?? 1,
+        });
       }
-      await this.linkRecipes(saved.id, recipeIds);
+      await this.linkRecipes(saved.id, recipeLinks);
     }
 
     this.logger.info({ id: saved.id, name: saved.name }, 'Meal plan created');
@@ -92,6 +99,25 @@ export class MealPlansService {
   ): Promise<MealPlanResponseDto> {
     const mealPlan = await this.findOneEntity(userId, id);
 
+    if (
+      dto.numberOfDays !== undefined &&
+      dto.numberOfDays < mealPlan.numberOfDays
+    ) {
+      const newDays = dto.numberOfDays;
+      const recipesOnHigherDays = mealPlan.mealPlanRecipes?.filter(
+        (r) => r.dayNumber > newDays,
+      );
+
+      if (recipesOnHigherDays?.length) {
+        const days = [
+          ...new Set(recipesOnHigherDays.map((r) => r.dayNumber)),
+        ].sort();
+        throw new BadRequestException(
+          `Cannot reduce numberOfDays to ${newDays}: there are recipes assigned to day(s) ${days.join(', ')}. Reassign or remove them first.`,
+        );
+      }
+    }
+
     const updateData: Partial<MealPlan> = {};
     if (dto.name !== undefined) updateData.name = dto.name;
     if (dto.description !== undefined) updateData.description = dto.description;
@@ -123,21 +149,21 @@ export class MealPlansService {
   private async replaceRecipes(
     userId: string,
     mealPlan: MealPlan,
-    recipeIds: string[],
+    recipeDtos: UpdateMealPlanRecipeDto[],
   ): Promise<void> {
     // Verify all recipes exist and belong to the user
-    for (const recipeId of recipeIds) {
+    for (const dto of recipeDtos) {
       const recipe = await this.recipeRepo.findOne({
-        where: { id: recipeId },
+        where: { id: dto.recipeId },
       });
 
       if (!recipe) {
-        throw new NotFoundException(`Recipe ${recipeId} not found`);
+        throw new NotFoundException(`Recipe ${dto.recipeId} not found`);
       }
 
       if (recipe.userId !== userId) {
         throw new ForbiddenException(
-          `Recipe ${recipeId} does not belong to you`,
+          `Recipe ${dto.recipeId} does not belong to you`,
         );
       }
     }
@@ -145,18 +171,24 @@ export class MealPlansService {
     // Delete existing join records
     await this.mealPlanRecipeRepo.delete({ mealPlanId: mealPlan.id });
 
-    await this.linkRecipes(mealPlan.id, recipeIds);
+    await this.linkRecipes(
+      mealPlan.id,
+      recipeDtos.map((d) => ({
+        recipeId: d.recipeId,
+        dayNumber: d.dayNumber ?? 1,
+      })),
+    );
   }
 
   private async linkRecipes(
     mealPlanId: string,
-    recipeIds: string[],
+    links: { recipeId: string; dayNumber: number }[],
   ): Promise<void> {
-    for (let i = 0; i < recipeIds.length; i++) {
+    for (let i = 0; i < links.length; i++) {
       const mealPlanRecipe = this.mealPlanRecipeRepo.create({
         mealPlanId,
-        recipeId: recipeIds[i],
-        dayNumber: 1,
+        recipeId: links[i].recipeId,
+        dayNumber: links[i].dayNumber,
         position: i,
       });
       await this.mealPlanRecipeRepo.save(mealPlanRecipe);

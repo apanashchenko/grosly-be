@@ -38,7 +38,7 @@ export class MealPlanRecipe {
   @Column()
   recipeId: string;
 
-  @Column({ type: 'int' })
+  @Column({ type: 'int', default: 1 })
   dayNumber: number;
 
   @Column({ type: 'int', default: 0 })

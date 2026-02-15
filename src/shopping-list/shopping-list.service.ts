@@ -350,7 +350,7 @@ export class ShoppingListService {
         name: c.name,
       }));
 
-      const mappings = await this.aiService.categorizeItems(
+      const { data: mappings } = await this.aiService.categorizeItems(
         itemsForAi,
         categoriesForAi,
       );

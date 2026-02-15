@@ -17,6 +17,17 @@ export interface AiCallConfig {
   responseFormat?: OpenAI.Chat.Completions.ChatCompletionCreateParams['response_format'];
 }
 
+export interface AiTokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+export interface AiResult<T> {
+  data: T;
+  usage: AiTokenUsage | null;
+}
+
 @Injectable()
 export class AiClientService {
   private readonly openai: OpenAI;
@@ -96,7 +107,7 @@ export class AiClientService {
   async callAndParseJson<T>(
     config: AiCallConfig,
     operationName: string,
-  ): Promise<T> {
+  ): Promise<AiResult<T>> {
     const makeCall = async (): Promise<{
       text: string;
       completion: OpenAI.Chat.Completions.ChatCompletion;
@@ -132,23 +143,34 @@ export class AiClientService {
       return JSON.parse(jsonText) as T;
     };
 
-    const { text: responseText } = await makeCall();
+    let completion: OpenAI.Chat.Completions.ChatCompletion;
+    let parsed: T;
+
+    const first = await makeCall();
+    completion = first.completion;
     try {
-      return parseJson(responseText);
+      parsed = parseJson(first.text);
     } catch (error) {
       if (error instanceof SyntaxError) {
         this.logger.warn(
           {
-            rawResponse: responseText.substring(0, 500),
+            rawResponse: first.text.substring(0, 500),
             operationName,
           },
           'JSON parse failed, retrying OpenAI call once',
         );
-        const { text: retryText } = await makeCall();
-        return parseJson(retryText);
+        const retry = await makeCall();
+        completion = retry.completion;
+        parsed = parseJson(retry.text);
+      } else {
+        throw error;
       }
-      throw error;
     }
+
+    return {
+      data: parsed,
+      usage: this.extractUsage(completion.usage),
+    };
   }
 
   /**
@@ -159,7 +181,7 @@ export class AiClientService {
     config: AiCallConfig,
     onChunk: (delta: string) => void,
     operationName: string,
-  ): Promise<T> {
+  ): Promise<AiResult<T>> {
     const startTime = Date.now();
     const stream = this.createStream(config);
 
@@ -189,7 +211,11 @@ export class AiClientService {
       .replace(/```json\n?/g, '')
       .replace(/```\n?/g, '')
       .trim();
-    return JSON.parse(jsonText) as T;
+
+    return {
+      data: JSON.parse(jsonText) as T,
+      usage: this.extractUsage(completion.usage),
+    };
   }
 
   /**
@@ -203,6 +229,17 @@ export class AiClientService {
   }
 
   // ==================== PRIVATE ====================
+
+  private extractUsage(
+    usage: OpenAI.Completions.CompletionUsage | undefined,
+  ): AiTokenUsage | null {
+    if (!usage) return null;
+    return {
+      promptTokens: usage.prompt_tokens,
+      completionTokens: usage.completion_tokens,
+      totalTokens: usage.total_tokens,
+    };
+  }
 
   private buildUserMessage(
     config: AiCallConfig,
@@ -239,6 +276,7 @@ export class AiClientService {
   private createStream(config: AiCallConfig) {
     return this.openai.chat.completions.stream({
       model: config.model,
+      stream_options: { include_usage: true },
       ...(config.temperature !== undefined && {
         temperature: config.temperature,
       }),

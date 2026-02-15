@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { AiRequestLog } from '../entities/ai-request-log.entity';
 import { UsageAction } from '../subscription/enums/usage-action.enum';
+import { AiResult, AiTokenUsage } from './ai-client.service';
 
 @Injectable()
 export class AiRequestLogService {
@@ -16,23 +17,26 @@ export class AiRequestLogService {
 
   /**
    * Wraps an AI operation, automatically logging the request and result.
-   * Returns the result of the operation on success, or rethrows on failure.
+   * Expects operation to return AiResult<T>, extracts usage for logging,
+   * and returns only the data (T) to callers.
    */
   async logRequest<T>(params: {
     userId: string;
     action: UsageAction;
     input: string;
-    operation: () => Promise<T>;
+    operation: () => Promise<AiResult<T>>;
   }): Promise<T> {
     const start = Date.now();
     let success = true;
     let errorMessage: string | null = null;
     let output: Record<string, unknown> | null = null;
+    let usage: AiTokenUsage | null = null;
 
     try {
       const result = await params.operation();
-      output = result as Record<string, unknown>;
-      return result;
+      output = result.data as Record<string, unknown>;
+      usage = result.usage;
+      return result.data;
     } catch (error) {
       success = false;
       errorMessage = error instanceof Error ? error.message : String(error);
@@ -49,6 +53,9 @@ export class AiRequestLogService {
           success,
           errorMessage: errorMessage?.slice(0, 500) ?? null,
           durationMs,
+          promptTokens: usage?.promptTokens ?? null,
+          completionTokens: usage?.completionTokens ?? null,
+          totalTokens: usage?.totalTokens ?? null,
         });
         await this.repo.save(log);
       } catch (saveError) {

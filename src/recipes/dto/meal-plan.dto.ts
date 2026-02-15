@@ -216,16 +216,30 @@ export class ParsedRequestDto {
 
 export class SingleRecipeResponseDto {
   @ApiProperty({
-    description: 'Number of people the recipe is calculated for',
+    description: 'Number of people the recipes are calculated for',
     example: 4,
   })
   numberOfPeople: number;
 
   @ApiProperty({
-    description: 'Generated recipe',
-    type: RecipeDto,
+    description: 'Generated recipe variations (2-5)',
+    type: [RecipeDto],
   })
-  recipe: RecipeDto;
+  recipes: RecipeDto[];
+}
+
+export class MealPlanDayDto {
+  @ApiProperty({
+    description: 'Day number (starting from 1)',
+    example: 1,
+  })
+  dayNumber: number;
+
+  @ApiProperty({
+    description: 'Recipe variations for this day (3-5)',
+    type: [RecipeDto],
+  })
+  recipes: RecipeDto[];
 }
 
 export class MealPlanResponseDto {
@@ -243,8 +257,8 @@ export class MealPlanResponseDto {
   description: string;
 
   @ApiProperty({
-    description: 'List of generated recipes',
-    type: [RecipeDto],
+    description: 'Meal plan days, each with 3-5 recipe variations',
+    type: [MealPlanDayDto],
   })
-  recipes: RecipeDto[];
+  days: MealPlanDayDto[];
 }

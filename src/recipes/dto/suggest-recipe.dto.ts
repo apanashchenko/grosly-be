@@ -7,7 +7,7 @@ import {
   ArrayMinSize,
   ArrayMaxSize,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
  * Request DTO for suggesting recipes from available ingredients
@@ -80,6 +80,11 @@ export class SuggestedRecipe {
             localized: { type: 'string', example: 'grams' },
           },
         },
+        categoryId: {
+          type: 'string',
+          nullable: true,
+          example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+        },
       },
     },
   })
@@ -90,6 +95,7 @@ export class SuggestedRecipe {
       canonical: string;
       localized: string;
     };
+    categoryId: string | null;
   }>;
 
   @ApiProperty({

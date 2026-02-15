@@ -61,9 +61,9 @@ export const SINGLE_RECIPE_RESPONSE_FORMAT: OpenAI.Chat.Completions.ChatCompleti
         type: 'object',
         properties: {
           numberOfPeople: { type: 'number' },
-          recipe: RECIPE_SCHEMA,
+          recipes: { type: 'array', items: RECIPE_SCHEMA },
         },
-        required: ['numberOfPeople', 'recipe'],
+        required: ['numberOfPeople', 'recipes'],
         additionalProperties: false,
       },
     },
@@ -102,12 +102,20 @@ export const MEAL_PLAN_RESPONSE_FORMAT: OpenAI.Chat.Completions.ChatCompletionCr
             description:
               'Short summary of the meal plan theme/goal (1-2 sentences)',
           },
-          recipes: {
+          days: {
             type: 'array',
-            items: RECIPE_SCHEMA,
+            items: {
+              type: 'object',
+              properties: {
+                dayNumber: { type: 'number' },
+                recipes: { type: 'array', items: RECIPE_SCHEMA },
+              },
+              required: ['dayNumber', 'recipes'],
+              additionalProperties: false,
+            },
           },
         },
-        required: ['parsedRequest', 'description', 'recipes'],
+        required: ['parsedRequest', 'description', 'days'],
         additionalProperties: false,
       },
     },

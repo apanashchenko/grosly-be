@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { createHash } from 'crypto';
 import { generateCacheKey } from '../cache/cache-key.util';
-import { AiClientService, AiCallConfig } from './ai-client.service';
+import { AiClientService, AiCallConfig, AiResult } from './ai-client.service';
 import {
   SINGLE_RECIPE_RESPONSE_FORMAT,
   MEAL_PLAN_RESPONSE_FORMAT,
@@ -47,15 +47,20 @@ export interface ParsedRequest {
   mealType: string | null;
 }
 
+export interface MealPlanDay {
+  dayNumber: number;
+  recipes: Recipe[];
+}
+
 export interface MealPlanAiResponse {
   parsedRequest: ParsedRequest;
   description: string;
-  recipes: Recipe[];
+  days: MealPlanDay[];
 }
 
 export interface SingleRecipeAiResponse {
   numberOfPeople: number;
-  recipe: Recipe;
+  recipes: Recipe[];
 }
 
 export interface InstructionStep {
@@ -92,8 +97,8 @@ export interface ItemCategoryMapping {
 const PROMPT_VERSIONS = {
   parse: 'v6',
   parseImage: 'v6',
-  generate: 'v1',
-  suggest: 'v1',
+  generate: 'v3',
+  suggest: 'v2',
   categorize: 'v1',
 } as const;
 
@@ -324,12 +329,17 @@ ${this.buildCategoryBlock(categories)}
 Your task:
 1. Understand the user's intent regardless of query language
 2. Determine how many people the dish is for (default: 2 if not specified)
-3. Generate one classic, realistic recipe for the requested dish
+3. Generate 2-5 different recipe variations for the requested dish
 4. Calculate ingredient quantities for the determined number of people
 ${categories.length > 0 ? '5. Assign the most appropriate category to each ingredient from the provided list' : ''}
 
 Rules:
+- Each recipe MUST be a distinct variation (different style, cuisine twist, or cooking method)
+- Order recipes from most classic/traditional to most creative
 - All human-readable text MUST be in language: "${responseLanguage}"
+- Ingredient "name" MUST contain ONLY the pure product name (e.g. "long-grain rice", "lamb", "carrot")
+- Do NOT include preparation method in "name" (no "diced", "sliced", "chopped", "julienned")
+- All preparation details (how to cut, slice, dice, etc.) belong ONLY in the instruction steps
 - canonical units MUST be consistent (e.g. "g", "ml", "pcs", "tbsp", "tsp")
 - localized units MUST match the response language and culinary norms
 - quantity MUST be numbers only
@@ -372,17 +382,23 @@ ${this.buildCategoryBlock(categories)}
 Your task:
 1. Understand the user's intent regardless of query language
 2. Determine:
-   - number of people
-   - number of days
+   - number of people (default: 1 if not specified)
+   - number of days (default: 1 if not specified)
    - dietary restrictions
    - meal type (if specified)
 3. Write a short description (1-2 sentences) summarizing the meal plan theme/goal
-4. Generate classic, realistic recipes
+4. For EACH day, generate 3-5 different recipe variations the user can choose from
 5. Calculate ingredient quantities per recipe
 ${categories.length > 0 ? '6. Assign the most appropriate category to each ingredient from the provided list' : ''}
 
 Rules:
+- Each day MUST have 3-5 recipe variations
+- Recipes within the same day MUST be distinct variations (different style, cuisine twist, or cooking method)
+- Order recipes within each day from most classic/traditional to most creative
 - All human-readable text MUST be in language: "${responseLanguage}"
+- Ingredient "name" MUST contain ONLY the pure product name (e.g. "long-grain rice", "lamb", "carrot")
+- Do NOT include preparation method in "name" (no "diced", "sliced", "chopped", "julienned")
+- All preparation details (how to cut, slice, dice, etc.) belong ONLY in the instruction steps
 - canonical units MUST be consistent across all recipes
 - localized units MUST match the response language and culinary norms
 - quantity MUST be numbers only
@@ -403,6 +419,7 @@ ${this.buildCategoryRule(categories)}
     ingredients: string[],
     responseLanguage: string,
     strictMode: boolean,
+    categories: { slug: string; name: string }[] = [],
   ): AiCallConfig {
     const ingredientsList = ingredients.join(', ');
 
@@ -438,7 +455,7 @@ Ingredient mode: FLEXIBLE
       prompt: `
 Available ingredients (can be in any language):
 ${ingredientsList}
-${strictModeBlock}
+${this.buildCategoryBlock(categories)}${strictModeBlock}
 
 Your task:
 1. Understand the ingredients list regardless of language
@@ -453,6 +470,9 @@ Your task:
 
 Rules:
 - All human-readable text MUST be in language: "${responseLanguage}"
+- Ingredient "name" MUST contain ONLY the pure product name (e.g. "long-grain rice", "lamb", "carrot")
+- Do NOT include preparation method in "name" (no "diced", "sliced", "chopped", "julienned")
+- All preparation details (how to cut, slice, dice, etc.) belong ONLY in the instruction steps
 - Return 1-3 recipes. If no realistic recipe can be made, return an empty suggestedRecipes array.
 - matchedIngredients MUST include ONLY ingredients from the user's provided list
 - additionalIngredients: ingredient names NOT in user's list but needed for recipe
@@ -471,6 +491,7 @@ Rules:
 - Use metric system
 - Realistic quantities for home cooking
 - Avoid leaving out obvious usable ingredients without a reason
+${this.buildCategoryRule(categories)}
 - Before returning the JSON, internally verify that all rules above are satisfied
 `,
     };
@@ -482,7 +503,7 @@ Rules:
     recipeText: string,
     responseLanguage: string = 'uk',
     categories: { slug: string; name: string }[] = [],
-  ): Promise<ParseRecipeAiResponse> {
+  ): Promise<AiResult<ParseRecipeAiResponse>> {
     const config = this.buildExtractIngredientsConfig(
       recipeText,
       responseLanguage,
@@ -493,7 +514,7 @@ Rules:
       config.cacheKey,
       'extractIngredients',
     );
-    if (cached) return cached;
+    if (cached) return { data: cached, usage: null };
 
     return this.client.deduplicated(config.cacheKey, async () => {
       this.logger.info(
@@ -506,17 +527,18 @@ Rules:
         'AI cache MISS: extractIngredientsFromRecipe',
       );
 
-      const parsed = await this.client.callAndParseJson<ParseRecipeAiResponse>(
-        config,
-        'extractIngredients',
-      );
+      const { data: parsed, usage } =
+        await this.client.callAndParseJson<ParseRecipeAiResponse>(
+          config,
+          'extractIngredients',
+        );
 
       this.logger.info(
         { ingredientsCount: parsed.ingredients.length, error: parsed.error },
         'Ingredients extracted successfully',
       );
 
-      const result: ParseRecipeAiResponse = {
+      const data: ParseRecipeAiResponse = {
         recipeText: parsed.recipeText,
         ingredients: parsed.ingredients,
         ...(parsed.error && { error: parsed.error }),
@@ -524,12 +546,12 @@ Rules:
 
       await this.client.cacheSet(
         config.cacheKey,
-        result,
+        data,
         config.cacheTtlKey,
         config.cacheTtlDefault,
       );
 
-      return result;
+      return { data, usage };
     });
   }
 
@@ -538,7 +560,7 @@ Rules:
     mimeType: string,
     responseLanguage: string = 'uk',
     categories: { slug: string; name: string }[] = [],
-  ): Promise<ParseRecipeAiResponse> {
+  ): Promise<AiResult<ParseRecipeAiResponse>> {
     const imageBase64 = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
     const imageHash = createHash('sha256').update(imageBuffer).digest('hex');
 
@@ -553,7 +575,7 @@ Rules:
       config.cacheKey,
       'extractIngredientsFromImage',
     );
-    if (cached) return cached;
+    if (cached) return { data: cached, usage: null };
 
     return this.client.deduplicated(config.cacheKey, async () => {
       this.logger.info(
@@ -567,17 +589,18 @@ Rules:
         'AI cache MISS: extractIngredientsFromImage',
       );
 
-      const parsed = await this.client.callAndParseJson<ParseRecipeAiResponse>(
-        config,
-        'extractIngredientsFromImage',
-      );
+      const { data: parsed, usage } =
+        await this.client.callAndParseJson<ParseRecipeAiResponse>(
+          config,
+          'extractIngredientsFromImage',
+        );
 
       this.logger.info(
         { ingredientsCount: parsed.ingredients.length, error: parsed.error },
         'Ingredients extracted from image successfully',
       );
 
-      const result: ParseRecipeAiResponse = {
+      const data: ParseRecipeAiResponse = {
         recipeText: parsed.recipeText,
         ingredients: parsed.ingredients,
         ...(parsed.error && { error: parsed.error }),
@@ -585,12 +608,12 @@ Rules:
 
       await this.client.cacheSet(
         config.cacheKey,
-        result,
+        data,
         config.cacheTtlKey,
         config.cacheTtlDefault,
       );
 
-      return result;
+      return { data, usage };
     });
   }
 
@@ -598,7 +621,7 @@ Rules:
     userQuery: string,
     responseLanguage: string = 'uk',
     categories: { slug: string; name: string }[] = [],
-  ): Promise<MealPlanAiResponse> {
+  ): Promise<AiResult<MealPlanAiResponse>> {
     const config = this.buildMealPlanConfig(
       userQuery,
       responseLanguage,
@@ -609,7 +632,7 @@ Rules:
       config.cacheKey,
       'generateMealPlan',
     );
-    if (cached) return cached;
+    if (cached) return { data: cached, usage: null };
 
     return this.client.deduplicated(config.cacheKey, async () => {
       this.logger.info(
@@ -621,28 +644,29 @@ Rules:
         'AI cache MISS: generateMealPlanFromUserQuery',
       );
 
-      const result = await this.client.callAndParseJson<MealPlanAiResponse>(
-        config,
-        'generateMealPlan',
-      );
+      const { data, usage } =
+        await this.client.callAndParseJson<MealPlanAiResponse>(
+          config,
+          'generateMealPlan',
+        );
 
       this.logger.info(
         {
-          numberOfPeople: result.parsedRequest.numberOfPeople,
-          numberOfDays: result.parsedRequest.numberOfDays,
-          recipesCount: result.recipes.length,
+          numberOfPeople: data.parsedRequest.numberOfPeople,
+          numberOfDays: data.parsedRequest.numberOfDays,
+          daysCount: data.days.length,
         },
         'Meal plan generated successfully',
       );
 
       await this.client.cacheSet(
         config.cacheKey,
-        result,
+        data,
         config.cacheTtlKey,
         config.cacheTtlDefault,
       );
 
-      return result;
+      return { data, usage };
     });
   }
 
@@ -650,7 +674,7 @@ Rules:
     dishQuery: string,
     responseLanguage: string = 'uk',
     categories: { slug: string; name: string }[] = [],
-  ): Promise<SingleRecipeAiResponse> {
+  ): Promise<AiResult<SingleRecipeAiResponse>> {
     const config = this.buildSingleRecipeConfig(
       dishQuery,
       responseLanguage,
@@ -661,7 +685,7 @@ Rules:
       config.cacheKey,
       'generateSingleRecipe',
     );
-    if (cached) return cached;
+    if (cached) return { data: cached, usage: null };
 
     return this.client.deduplicated(config.cacheKey, async () => {
       this.logger.info(
@@ -673,28 +697,28 @@ Rules:
         'AI cache MISS: generateSingleRecipe',
       );
 
-      const result = await this.client.callAndParseJson<SingleRecipeAiResponse>(
-        config,
-        'generateSingleRecipe',
-      );
+      const { data, usage } =
+        await this.client.callAndParseJson<SingleRecipeAiResponse>(
+          config,
+          'generateSingleRecipe',
+        );
 
       this.logger.info(
         {
-          numberOfPeople: result.numberOfPeople,
-          dishName: result.recipe.dishName,
-          ingredientsCount: result.recipe.ingredients.length,
+          numberOfPeople: data.numberOfPeople,
+          recipesCount: data.recipes.length,
         },
         'Single recipe generated successfully',
       );
 
       await this.client.cacheSet(
         config.cacheKey,
-        result,
+        data,
         config.cacheTtlKey,
         config.cacheTtlDefault,
       );
 
-      return result;
+      return { data, usage };
     });
   }
 
@@ -702,18 +726,20 @@ Rules:
     ingredients: string[],
     responseLanguage: string = 'uk',
     strictMode: boolean = false,
-  ): Promise<SuggestRecipesResponse> {
+    categories: { slug: string; name: string }[] = [],
+  ): Promise<AiResult<SuggestRecipesResponse>> {
     const config = this.buildSuggestRecipesConfig(
       ingredients,
       responseLanguage,
       strictMode,
+      categories,
     );
 
     const cached = await this.client.cacheGet<SuggestRecipesResponse>(
       config.cacheKey,
       'suggestRecipes',
     );
-    if (cached) return cached;
+    if (cached) return { data: cached, usage: null };
 
     return this.client.deduplicated(config.cacheKey, async () => {
       this.logger.info(
@@ -726,12 +752,13 @@ Rules:
         'AI cache MISS: suggestRecipesFromIngredients',
       );
 
-      const result = await this.client.callAndParseJson<SuggestRecipesResponse>(
-        config,
-        'suggestRecipes',
-      );
+      const { data, usage } =
+        await this.client.callAndParseJson<SuggestRecipesResponse>(
+          config,
+          'suggestRecipes',
+        );
 
-      result.suggestedRecipes.forEach((recipe) => {
+      data.suggestedRecipes.forEach((recipe) => {
         recipe.ingredients.forEach((ing) => {
           if (typeof ing.quantity !== 'number' || ing.quantity <= 0) {
             this.logger.warn(
@@ -750,25 +777,25 @@ Rules:
       });
 
       this.logger.info(
-        { recipesCount: result.suggestedRecipes.length },
+        { recipesCount: data.suggestedRecipes.length },
         'Recipes suggested successfully',
       );
 
       await this.client.cacheSet(
         config.cacheKey,
-        result,
+        data,
         config.cacheTtlKey,
         config.cacheTtlDefault,
       );
 
-      return result;
+      return { data, usage };
     });
   }
 
   async categorizeItems(
     items: { id: string; name: string }[],
     categories: { id: string; slug: string; name: string }[],
-  ): Promise<ItemCategoryMapping[]> {
+  ): Promise<AiResult<ItemCategoryMapping[]>> {
     const cacheKey = generateCacheKey('categorize', {
       v: PROMPT_VERSIONS.categorize,
       model: 'gpt-4.1-mini',
@@ -781,7 +808,7 @@ Rules:
       cacheKey,
       'categorizeItems',
     );
-    if (cached) return cached;
+    if (cached) return { data: cached, usage: null };
 
     return this.client.deduplicated(cacheKey, async () => {
       this.logger.info(
@@ -811,7 +838,7 @@ Rules:
   - 0.5–0.8: minor ambiguity between categories
   - <0.5: uncertain or no good match`;
 
-      const parsed = await this.client.callAndParseJson<{
+      const { data: parsed, usage } = await this.client.callAndParseJson<{
         mappings: ItemCategoryMapping[];
       }>(
         {
@@ -920,7 +947,7 @@ Rules:
         604800,
       );
 
-      return parsed.mappings;
+      return { data: parsed.mappings, usage };
     });
   }
 
@@ -931,7 +958,7 @@ Rules:
     responseLanguage: string = 'uk',
     categories: { slug: string; name: string }[] = [],
     onChunk: (delta: string) => void,
-  ): Promise<ParseRecipeAiResponse> {
+  ): Promise<AiResult<ParseRecipeAiResponse>> {
     const config = this.buildExtractIngredientsConfig(
       recipeText,
       responseLanguage,
@@ -942,7 +969,7 @@ Rules:
       config.cacheKey,
       'extractIngredientsStreamed',
     );
-    if (cached) return cached;
+    if (cached) return { data: cached, usage: null };
 
     this.logger.info(
       {
@@ -954,13 +981,14 @@ Rules:
       'AI cache MISS: extractIngredientsFromRecipeStreamed',
     );
 
-    const parsed = await this.client.callStreamedJson<ParseRecipeAiResponse>(
-      config,
-      onChunk,
-      'extractIngredientsStreamed',
-    );
+    const { data: parsed, usage } =
+      await this.client.callStreamedJson<ParseRecipeAiResponse>(
+        config,
+        onChunk,
+        'extractIngredientsStreamed',
+      );
 
-    const result: ParseRecipeAiResponse = {
+    const data: ParseRecipeAiResponse = {
       recipeText: parsed.recipeText,
       ingredients: parsed.ingredients,
       ...(parsed.error && { error: parsed.error }),
@@ -968,12 +996,12 @@ Rules:
 
     await this.client.cacheSet(
       config.cacheKey,
-      result,
+      data,
       config.cacheTtlKey,
       config.cacheTtlDefault,
     );
 
-    return result;
+    return { data, usage };
   }
 
   async generateSingleRecipeStreamed(
@@ -981,7 +1009,7 @@ Rules:
     responseLanguage: string = 'uk',
     categories: { slug: string; name: string }[] = [],
     onChunk: (delta: string) => void,
-  ): Promise<SingleRecipeAiResponse> {
+  ): Promise<AiResult<SingleRecipeAiResponse>> {
     const config = this.buildSingleRecipeConfig(
       dishQuery,
       responseLanguage,
@@ -992,7 +1020,7 @@ Rules:
       config.cacheKey,
       'generateSingleRecipeStreamed',
     );
-    if (cached) return cached;
+    if (cached) return { data: cached, usage: null };
 
     this.logger.info(
       {
@@ -1003,20 +1031,21 @@ Rules:
       'AI cache MISS: generateSingleRecipeStreamed',
     );
 
-    const result = await this.client.callStreamedJson<SingleRecipeAiResponse>(
-      config,
-      onChunk,
-      'generateSingleRecipeStreamed',
-    );
+    const { data, usage } =
+      await this.client.callStreamedJson<SingleRecipeAiResponse>(
+        config,
+        onChunk,
+        'generateSingleRecipeStreamed',
+      );
 
     await this.client.cacheSet(
       config.cacheKey,
-      result,
+      data,
       config.cacheTtlKey,
       config.cacheTtlDefault,
     );
 
-    return result;
+    return { data, usage };
   }
 
   async generateMealPlanStreamed(
@@ -1024,7 +1053,7 @@ Rules:
     responseLanguage: string = 'uk',
     categories: { slug: string; name: string }[] = [],
     onChunk: (delta: string) => void,
-  ): Promise<MealPlanAiResponse> {
+  ): Promise<AiResult<MealPlanAiResponse>> {
     const config = this.buildMealPlanConfig(
       userQuery,
       responseLanguage,
@@ -1035,7 +1064,7 @@ Rules:
       config.cacheKey,
       'generateMealPlanStreamed',
     );
-    if (cached) return cached;
+    if (cached) return { data: cached, usage: null };
 
     this.logger.info(
       {
@@ -1046,39 +1075,42 @@ Rules:
       'AI cache MISS: generateMealPlanStreamed',
     );
 
-    const result = await this.client.callStreamedJson<MealPlanAiResponse>(
-      config,
-      onChunk,
-      'generateMealPlanStreamed',
-    );
+    const { data, usage } =
+      await this.client.callStreamedJson<MealPlanAiResponse>(
+        config,
+        onChunk,
+        'generateMealPlanStreamed',
+      );
 
     await this.client.cacheSet(
       config.cacheKey,
-      result,
+      data,
       config.cacheTtlKey,
       config.cacheTtlDefault,
     );
 
-    return result;
+    return { data, usage };
   }
 
   async suggestRecipesStreamed(
     ingredients: string[],
     responseLanguage: string = 'uk',
     strictMode: boolean = false,
+    categories: { slug: string; name: string }[] = [],
     onChunk: (delta: string) => void,
-  ): Promise<SuggestRecipesResponse> {
+  ): Promise<AiResult<SuggestRecipesResponse>> {
     const config = this.buildSuggestRecipesConfig(
       ingredients,
       responseLanguage,
       strictMode,
+      categories,
     );
 
     const cached = await this.client.cacheGet<SuggestRecipesResponse>(
       config.cacheKey,
       'suggestRecipesStreamed',
     );
-    if (cached) return cached;
+    if (cached) return { data: cached, usage: null };
 
     this.logger.info(
       {
@@ -1090,19 +1122,20 @@ Rules:
       'AI cache MISS: suggestRecipesStreamed',
     );
 
-    const result = await this.client.callStreamedJson<SuggestRecipesResponse>(
-      config,
-      onChunk,
-      'suggestRecipesStreamed',
-    );
+    const { data, usage } =
+      await this.client.callStreamedJson<SuggestRecipesResponse>(
+        config,
+        onChunk,
+        'suggestRecipesStreamed',
+      );
 
     await this.client.cacheSet(
       config.cacheKey,
-      result,
+      data,
       config.cacheTtlKey,
       config.cacheTtlDefault,
     );
 
-    return result;
+    return { data, usage };
   }
 }

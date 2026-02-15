@@ -43,6 +43,15 @@ export class AiRequestLog {
   @Column({ type: 'int', nullable: true })
   durationMs: number | null;
 
+  @Column({ type: 'int', nullable: true })
+  promptTokens: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  completionTokens: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  totalTokens: number | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }
