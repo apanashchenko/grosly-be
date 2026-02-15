@@ -14,7 +14,12 @@ export const getTypeOrmConfig = (
     database: config.get<string>('DB_NAME') || 'grosly',
     entities: [__dirname + '/../**/*.entity{.ts,.js}'],
     synchronize: config.get<string>('DB_SYNCHRONIZE') === 'true',
-    // logging: !isProduction,
     namingStrategy: new SnakeNamingStrategy(),
+    extra: {
+      max: 50,
+      min: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    },
   };
 };

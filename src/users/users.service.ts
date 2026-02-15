@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
@@ -15,9 +16,8 @@ export interface CreateUserFromOAuthParams {
 
 @Injectable()
 export class UsersService {
-  private readonly logger = new Logger(UsersService.name);
-
   constructor(
+    @InjectPinoLogger(UsersService.name) private readonly logger: PinoLogger,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
   ) {}
@@ -52,7 +52,7 @@ export class UsersService {
 
     const savedUser = await this.usersRepository.save(user);
 
-    this.logger.log(
+    this.logger.info(
       { userId: savedUser.id, provider: params.authProvider },
       'New user created from OAuth',
     );

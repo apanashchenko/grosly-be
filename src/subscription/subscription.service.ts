@@ -1,9 +1,9 @@
 import {
   Injectable,
-  Logger,
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
 import { Plan } from '../entities/plan.entity';
@@ -32,9 +32,9 @@ const USAGE_ACTION_TO_PLAN_LIMIT: Record<UsageAction, keyof Plan> = {
 
 @Injectable()
 export class SubscriptionService {
-  private readonly logger = new Logger(SubscriptionService.name);
-
   constructor(
+    @InjectPinoLogger(SubscriptionService.name)
+    private readonly logger: PinoLogger,
     @InjectRepository(Plan)
     private readonly planRepo: Repository<Plan>,
     @InjectRepository(Subscription)
@@ -78,7 +78,7 @@ export class SubscriptionService {
       });
       subscription = await this.subscriptionRepo.save(subscription);
 
-      this.logger.log({ userId }, 'Created default subscription (free)');
+      this.logger.info({ userId }, 'Created default subscription (free)');
     }
 
     return subscription;
@@ -102,7 +102,7 @@ export class SubscriptionService {
     });
 
     const saved = await this.subscriptionRepo.save(subscription);
-    this.logger.log(
+    this.logger.info(
       { userId, trialEndsAt: trialEndsAt.toISOString() },
       'Created trial subscription (pro)',
     );
@@ -206,7 +206,7 @@ export class SubscriptionService {
     }
 
     if (expiredTrials.length > 0) {
-      this.logger.log(
+      this.logger.info(
         { count: expiredTrials.length },
         'Expired trial subscriptions downgraded to free',
       );

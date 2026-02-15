@@ -11,15 +11,15 @@ import {
   HttpCode,
   ParseUUIDPipe,
   ValidationPipe,
-  Logger,
   UseInterceptors,
   UploadedFile,
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
 } from '@nestjs/common';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { FileInterceptor } from '@nestjs/platform-express';
-import * as express from 'express';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -64,9 +64,11 @@ import { UsageAction } from '../subscription/enums/usage-action.enum';
 @ApiBearerAuth()
 @Controller('recipes')
 export class RecipesController {
-  private readonly logger = new Logger(RecipesController.name);
-
-  constructor(private readonly recipesService: RecipesService) {}
+  constructor(
+    @InjectPinoLogger(RecipesController.name)
+    private readonly logger: PinoLogger,
+    private readonly recipesService: RecipesService,
+  ) {}
 
   // ==================== SAVED RECIPES CRUD ====================
 
@@ -397,7 +399,7 @@ export class RecipesController {
   async generateSingleRecipeStream(
     @CurrentUser() user: User,
     @Body(new ValidationPipe()) dto: GenerateSingleRecipeDto,
-    @Res() res: express.Response,
+    @Res() res: Response,
   ): Promise<void> {
     this.initSse(res);
 
@@ -427,7 +429,7 @@ export class RecipesController {
   async generateMealPlanStream(
     @CurrentUser() user: User,
     @Body(new ValidationPipe()) dto: GenerateMealPlanDto,
-    @Res() res: express.Response,
+    @Res() res: Response,
   ): Promise<void> {
     this.initSse(res);
 
@@ -457,7 +459,7 @@ export class RecipesController {
   })
   async suggestRecipeStream(
     @Body(new ValidationPipe()) suggestRecipeDto: SuggestRecipeDto,
-    @Res() res: express.Response,
+    @Res() res: Response,
   ): Promise<void> {
     this.initSse(res);
 
@@ -476,18 +478,14 @@ export class RecipesController {
     res.end();
   }
 
-  private initSse(res: express.Response): void {
+  private initSse(res: Response): void {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
   }
 
-  private writeSseEvent(
-    res: express.Response,
-    event: string,
-    data: unknown,
-  ): void {
+  private writeSseEvent(res: Response, event: string, data: unknown): void {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   }
 }

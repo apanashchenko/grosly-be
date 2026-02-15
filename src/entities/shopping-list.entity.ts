@@ -14,6 +14,7 @@ import { Space } from './space.entity';
 import { ShoppingListItem } from './shopping-list-item.entity';
 
 @Entity('shopping_lists')
+@Index('shopping_lists_user_id_idx', ['userId'])
 export class ShoppingList {
   @PrimaryGeneratedColumn('uuid')
   id: string;

@@ -1,10 +1,10 @@
 import {
   Injectable,
   BadRequestException,
-  Logger,
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -42,8 +42,6 @@ import { RecipeSource } from './enums/recipe-source.enum';
 
 @Injectable()
 export class RecipesService {
-  private readonly logger = new Logger(RecipesService.name);
-
   // Business constraints
   private readonly MAX_PEOPLE = 20;
   private readonly MAX_DAYS = 7;
@@ -51,6 +49,8 @@ export class RecipesService {
   private readonly MIN_DAYS = 1;
 
   constructor(
+    @InjectPinoLogger(RecipesService.name)
+    private readonly logger: PinoLogger,
     @InjectRepository(Recipe)
     private readonly recipeRepo: Repository<Recipe>,
     @InjectRepository(RecipeIngredient)
@@ -87,7 +87,7 @@ export class RecipesService {
 
     const saved = await this.recipeRepo.save(recipe);
 
-    this.logger.log(
+    this.logger.info(
       {
         id: saved.id,
         title: saved.title,
@@ -169,7 +169,7 @@ export class RecipesService {
 
     const saved = await this.recipeRepo.save(recipe);
 
-    this.logger.log({ id: saved.id, title: saved.title }, 'Recipe updated');
+    this.logger.info({ id: saved.id, title: saved.title }, 'Recipe updated');
 
     return RecipeResponseDto.fromEntity(saved);
   }
@@ -187,7 +187,7 @@ export class RecipesService {
 
     await this.recipeRepo.remove(recipe);
 
-    this.logger.log({ id }, 'Recipe deleted');
+    this.logger.info({ id }, 'Recipe deleted');
   }
 
   async updateIngredient(
@@ -217,7 +217,7 @@ export class RecipesService {
 
     await this.ingredientRepo.save(ingredient);
 
-    this.logger.log({ recipeId, ingredientId }, 'Recipe ingredient updated');
+    this.logger.info({ recipeId, ingredientId }, 'Recipe ingredient updated');
 
     return this.findOne(userId, recipeId);
   }
@@ -241,7 +241,7 @@ export class RecipesService {
 
     await this.ingredientRepo.remove(ingredient);
 
-    this.logger.log({ recipeId, ingredientId }, 'Recipe ingredient removed');
+    this.logger.info({ recipeId, ingredientId }, 'Recipe ingredient removed');
   }
 
   private findIngredientInRecipe(
@@ -263,7 +263,7 @@ export class RecipesService {
     parseRecipeDto: ParseRecipeDto,
     userId: string,
   ): Promise<ParseRecipeResponseDto> {
-    this.logger.debug(
+    this.logger.info(
       { recipeTextLength: parseRecipeDto.recipeText.length },
       'Parsing recipe text',
     );
@@ -289,7 +289,7 @@ export class RecipesService {
       throw new BadRequestException(aiResult.error);
     }
 
-    this.logger.log(
+    this.logger.info(
       { ingredientsCount: aiResult.ingredients.length },
       'Recipe parsed successfully',
     );
@@ -317,7 +317,7 @@ export class RecipesService {
     file: { buffer: Buffer; mimetype: string; size: number },
     userId: string,
   ): Promise<ParseRecipeResponseDto> {
-    this.logger.debug(
+    this.logger.info(
       { imageSizeKb: Math.round(file.size / 1024), mimeType: file.mimetype },
       'Parsing recipe from image',
     );
@@ -344,7 +344,7 @@ export class RecipesService {
       throw new BadRequestException(aiResult.error);
     }
 
-    this.logger.log(
+    this.logger.info(
       { ingredientsCount: aiResult.ingredients.length },
       'Recipe parsed from image successfully',
     );
@@ -372,7 +372,7 @@ export class RecipesService {
     dto: GenerateSingleRecipeDto,
     userId: string,
   ): Promise<SingleRecipeResponseDto> {
-    this.logger.debug(
+    this.logger.info(
       { query: dto.query, language: dto.language },
       'Generating single recipe from user query',
     );
@@ -402,7 +402,7 @@ export class RecipesService {
       );
     }
 
-    this.logger.log(
+    this.logger.info(
       {
         numberOfPeople,
         dishName: aiResponse.recipe.dishName,
@@ -420,7 +420,7 @@ export class RecipesService {
     generateMealPlanDto: GenerateMealPlanDto,
     userId: string,
   ): Promise<MealPlanResponseDto> {
-    this.logger.debug(
+    this.logger.info(
       {
         query: generateMealPlanDto.query,
         language: generateMealPlanDto.language,
@@ -444,7 +444,7 @@ export class RecipesService {
     // Business-level validation of AI-parsed values
     this.validateBusinessConstraints(aiResponse.parsedRequest);
 
-    this.logger.log(
+    this.logger.info(
       {
         numberOfPeople: aiResponse.parsedRequest.numberOfPeople,
         numberOfDays: aiResponse.parsedRequest.numberOfDays,
@@ -510,7 +510,7 @@ export class RecipesService {
   async suggestRecipe(
     suggestRecipeDto: SuggestRecipeDto,
   ): Promise<SuggestRecipeResponseDto> {
-    this.logger.debug(
+    this.logger.info(
       {
         ingredientsCount: suggestRecipeDto.ingredients.length,
         language: suggestRecipeDto.language,
@@ -539,7 +539,7 @@ export class RecipesService {
       );
     }
 
-    this.logger.log(
+    this.logger.info(
       {
         recipesCount: result.suggestedRecipes.length,
       },

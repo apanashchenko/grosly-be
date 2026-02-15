@@ -1,9 +1,9 @@
 import {
   Injectable,
-  Logger,
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { paginate, Paginated, PaginationType } from 'nestjs-paginate';
@@ -18,9 +18,9 @@ import { MealPlanResponseDto } from './dto/meal-plan-response.dto';
 
 @Injectable()
 export class MealPlansService {
-  private readonly logger = new Logger(MealPlansService.name);
-
   constructor(
+    @InjectPinoLogger(MealPlansService.name)
+    private readonly logger: PinoLogger,
     @InjectRepository(MealPlan)
     private readonly mealPlanRepo: Repository<MealPlan>,
     @InjectRepository(MealPlanRecipe)
@@ -59,7 +59,7 @@ export class MealPlansService {
       await this.linkRecipes(saved.id, recipeIds);
     }
 
-    this.logger.log({ id: saved.id, name: saved.name }, 'Meal plan created');
+    this.logger.info({ id: saved.id, name: saved.name }, 'Meal plan created');
 
     const result = await this.findOneEntity(userId, saved.id);
     return MealPlanResponseDto.fromEntity(result);
@@ -106,7 +106,7 @@ export class MealPlansService {
       await this.replaceRecipes(userId, mealPlan, dto.recipes);
     }
 
-    this.logger.log({ id }, 'Meal plan updated');
+    this.logger.info({ id }, 'Meal plan updated');
 
     const result = await this.findOneEntity(userId, id);
     return MealPlanResponseDto.fromEntity(result);
@@ -116,7 +116,7 @@ export class MealPlansService {
     const mealPlan = await this.findOneEntity(userId, id);
     await this.mealPlanRepo.remove(mealPlan);
 
-    this.logger.log({ id }, 'Meal plan deleted');
+    this.logger.info({ id }, 'Meal plan deleted');
   }
 
   private async replaceRecipes(

@@ -1,0 +1,33 @@
+app = "grosly-postgres"
+primary_region = "fra"
+
+[build]
+  image = "postgres:18"
+
+[env]
+  POSTGRES_USER = "postgres"
+  POSTGRES_DB = "grosly"
+
+# PostgreSQL configuration with increased max_connections
+[processes]
+  app = "docker-entrypoint.sh postgres -c max_connections=250 -c shared_buffers=1GB"
+
+[[services]]
+  internal_port = 5432
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 5432
+
+[[vm]]
+  memory = "4gb"
+  cpu_kind = "shared"
+  cpus = 2
+
+[mounts]
+  source = "postgres_data"
+  destination = "/var/lib/postgresql"

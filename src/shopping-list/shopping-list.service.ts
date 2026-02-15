@@ -1,11 +1,11 @@
 import {
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
   ForbiddenException,
   ConflictException,
 } from '@nestjs/common';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   In,
@@ -33,9 +33,9 @@ import { REDIS_CLIENT } from '../cache/cache.module';
 
 @Injectable()
 export class ShoppingListService {
-  private readonly logger = new Logger(ShoppingListService.name);
-
   constructor(
+    @InjectPinoLogger(ShoppingListService.name)
+    private readonly logger: PinoLogger,
     @InjectRepository(ShoppingList)
     private readonly shoppingListRepo: Repository<ShoppingList>,
     @InjectRepository(ShoppingListItem)
@@ -76,7 +76,7 @@ export class ShoppingListService {
 
     const saved = await this.shoppingListRepo.save(list);
 
-    this.logger.log(
+    this.logger.info(
       {
         id: saved.id,
         name: saved.name,
@@ -187,7 +187,7 @@ export class ShoppingListService {
 
     const saved = await this.saveWithOptimisticLock(list);
 
-    this.logger.log(
+    this.logger.info(
       { id: saved.id, itemsCount: saved.items.length },
       'Shopping list updated',
     );
@@ -203,7 +203,7 @@ export class ShoppingListService {
     const list = await this.findOne(userId, id, spaceId);
     await this.shoppingListRepo.remove(list);
 
-    this.logger.log({ id }, 'Shopping list deleted');
+    this.logger.info({ id }, 'Shopping list deleted');
   }
 
   async addItems(
@@ -235,7 +235,7 @@ export class ShoppingListService {
     list.items.push(...newItems);
     await this.shoppingListRepo.save(list);
 
-    this.logger.log(
+    this.logger.info(
       { listId: list.id, addedCount: newItems.length },
       'Items added to shopping list',
     );
@@ -266,7 +266,7 @@ export class ShoppingListService {
     // Bump version on the list
     await this.shoppingListRepo.save(list);
 
-    this.logger.log(
+    this.logger.info(
       { listId: list.id, itemId: item.id },
       'Shopping list item updated',
     );
@@ -288,7 +288,7 @@ export class ShoppingListService {
     // Bump version on the list
     await this.shoppingListRepo.save(list);
 
-    this.logger.log({ listId: list.id, itemId }, 'Shopping list item removed');
+    this.logger.info({ listId: list.id, itemId }, 'Shopping list item removed');
   }
 
   async smartGroup(
@@ -331,7 +331,7 @@ export class ShoppingListService {
           groupedByCategories: true,
         });
 
-        this.logger.log(
+        this.logger.info(
           { listId, itemsGrouped: 0 },
           'All items already categorized, skipping AI call',
         );
@@ -392,7 +392,7 @@ export class ShoppingListService {
         groupedByCategories: true,
       });
 
-      this.logger.log(
+      this.logger.info(
         {
           listId,
           totalItems: list.items.length,
@@ -472,7 +472,7 @@ export class ShoppingListService {
       spaceId,
     );
 
-    this.logger.log(
+    this.logger.info(
       {
         id: list.id,
         sourceListIds: dto.listIds,

@@ -1,10 +1,10 @@
 import {
   Injectable,
-  Logger,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { paginate, Paginated, PaginationType } from 'nestjs-paginate';
@@ -25,9 +25,9 @@ import {
 
 @Injectable()
 export class SpacesService {
-  private readonly logger = new Logger(SpacesService.name);
-
   constructor(
+    @InjectPinoLogger(SpacesService.name)
+    private readonly logger: PinoLogger,
     @InjectRepository(Space)
     private readonly spaceRepo: Repository<Space>,
     @InjectRepository(SpaceMember)
@@ -51,7 +51,7 @@ export class SpacesService {
 
     const saved = await this.spaceRepo.save(space);
 
-    this.logger.log({ spaceId: saved.id, ownerId: userId }, 'Space created');
+    this.logger.info({ spaceId: saved.id, ownerId: userId }, 'Space created');
 
     return this.findOne(saved.id, userId);
   }
@@ -110,7 +110,7 @@ export class SpacesService {
 
     await this.spaceRepo.save(space);
 
-    this.logger.log({ spaceId }, 'Space updated');
+    this.logger.info({ spaceId }, 'Space updated');
 
     return this.findOne(spaceId, userId);
   }
@@ -121,7 +121,7 @@ export class SpacesService {
 
     await this.spaceRepo.remove(space);
 
-    this.logger.log({ spaceId }, 'Space deleted');
+    this.logger.info({ spaceId }, 'Space deleted');
   }
 
   async isMember(spaceId: string, userId: string): Promise<boolean> {
@@ -175,7 +175,7 @@ export class SpacesService {
 
     await this.invitationRepo.save(invitation);
 
-    this.logger.log(
+    this.logger.info(
       { spaceId, email, inviteeId: invitee?.id ?? null },
       'Space invitation created',
     );
@@ -218,7 +218,7 @@ export class SpacesService {
       await this.memberRepo.save(member);
       await this.invitationRepo.remove(invitation);
 
-      this.logger.log(
+      this.logger.info(
         { spaceId: invitation.spaceId, userId },
         'Space invitation accepted',
       );
@@ -226,7 +226,7 @@ export class SpacesService {
       invitation.status = InvitationStatus.DECLINED;
       await this.invitationRepo.save(invitation);
 
-      this.logger.log(
+      this.logger.info(
         { spaceId: invitation.spaceId, userId },
         'Space invitation declined',
       );
@@ -257,7 +257,7 @@ export class SpacesService {
 
     await this.memberRepo.remove(member);
 
-    this.logger.log(
+    this.logger.info(
       { spaceId, removedUserId: targetUserId },
       'Space member removed',
     );
@@ -283,7 +283,7 @@ export class SpacesService {
 
     await this.invitationRepo.remove(invitation);
 
-    this.logger.log({ spaceId, invitationId }, 'Space invitation cancelled');
+    this.logger.info({ spaceId, invitationId }, 'Space invitation cancelled');
   }
 
   async getSpaceInvitations(

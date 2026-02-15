@@ -1,4 +1,5 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -16,11 +17,12 @@ import { JwtPayload } from './strategies/jwt.strategy';
 
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name);
   private googleClient: OAuth2Client;
   private refreshTokenExpiration: string;
 
   constructor(
+    @InjectPinoLogger(AuthService.name)
+    private readonly logger: PinoLogger,
     private usersService: UsersService,
     private subscriptionService: SubscriptionService,
     private jwtService: JwtService,
@@ -90,7 +92,7 @@ export class AuthService {
     const hashedRefreshToken = this.hashToken(tokens.refreshToken);
     await this.usersService.updateRefreshToken(user.id, hashedRefreshToken);
 
-    this.logger.log({ userId: user.id }, 'Google login successful');
+    this.logger.info({ userId: user.id }, 'Google login successful');
 
     return {
       ...tokens,
@@ -134,7 +136,7 @@ export class AuthService {
     const hashedRefreshToken = this.hashToken(tokens.refreshToken);
     await this.usersService.updateRefreshToken(user.id, hashedRefreshToken);
 
-    this.logger.log({ userId: user.id }, 'Tokens refreshed successfully');
+    this.logger.info({ userId: user.id }, 'Tokens refreshed successfully');
 
     return {
       ...tokens,
@@ -144,7 +146,7 @@ export class AuthService {
 
   async logout(userId: string): Promise<void> {
     await this.usersService.updateRefreshToken(userId, null);
-    this.logger.log({ userId }, 'User logged out');
+    this.logger.info({ userId }, 'User logged out');
   }
 
   private async verifyGoogleToken(idToken: string): Promise<{
@@ -225,7 +227,7 @@ export class AuthService {
     );
 
     if (result.affected && result.affected > 0) {
-      this.logger.log(
+      this.logger.info(
         { userId, email, count: result.affected },
         'Linked pending invitations to new user',
       );

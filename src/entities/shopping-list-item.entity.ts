@@ -12,6 +12,8 @@ import { User } from './user.entity';
 
 @Entity('shopping_list_items')
 @Index('shopping_list_items_created_by_user_id_idx', ['createdByUserId'])
+@Index('shopping_list_items_shopping_list_id_idx', ['shoppingList'])
+@Index('shopping_list_items_category_id_idx', ['categoryId'])
 export class ShoppingListItem {
   @PrimaryGeneratedColumn('uuid')
   id: string;

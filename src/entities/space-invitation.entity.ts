@@ -15,6 +15,7 @@ import { InvitationStatus } from '../spaces/enums/invitation-status.enum';
 @Index('space_invitations_space_id_status_idx', ['spaceId', 'status'])
 @Index('space_invitations_invitee_id_status_idx', ['inviteeId', 'status'])
 @Index('space_invitations_email_status_idx', ['email', 'status'])
+@Index('space_invitations_inviter_id_idx', ['inviterId'])
 export class SpaceInvitation {
   @PrimaryGeneratedColumn('uuid')
   id: string;

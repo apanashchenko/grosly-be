@@ -1,18 +1,20 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { json } from 'express';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
 
   // Use Pino logger globally
   app.useLogger(app.get(PinoLogger));
 
   // Request size limit (protection against DoS attacks)
-  app.use(json({ limit: '100kb' }));
+  app.useBodyParser('json', { limit: '100kb' });
 
   // Global validation
   app.useGlobalPipes(

@@ -1,4 +1,5 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { UserPreferences } from '../entities/user-preferences.entity';
@@ -9,9 +10,9 @@ import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
 
 @Injectable()
 export class UserPreferencesService {
-  private readonly logger = new Logger(UserPreferencesService.name);
-
   constructor(
+    @InjectPinoLogger(UserPreferencesService.name)
+    private readonly logger: PinoLogger,
     @InjectRepository(UserPreferences)
     private readonly preferencesRepo: Repository<UserPreferences>,
     @InjectRepository(Allergy)
@@ -49,7 +50,7 @@ export class UserPreferencesService {
       });
       prefs = await this.preferencesRepo.save(prefs);
 
-      this.logger.log({ userId }, 'Created default user preferences');
+      this.logger.info({ userId }, 'Created default user preferences');
     }
 
     return prefs;
@@ -109,7 +110,7 @@ export class UserPreferencesService {
 
     const saved = await this.preferencesRepo.save(prefs);
 
-    this.logger.log({ userId }, 'User preferences updated');
+    this.logger.info({ userId }, 'User preferences updated');
 
     return saved;
   }

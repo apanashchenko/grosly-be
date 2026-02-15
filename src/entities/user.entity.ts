@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
   OneToOne,
   OneToMany,
+  Index,
 } from 'typeorm';
 import { UserPreferences } from './user-preferences.entity';
 import { ShoppingList } from './shopping-list.entity';
@@ -17,6 +18,7 @@ import { SpaceMember } from './space-member.entity';
 import { AuthProvider } from '../auth/enums/auth-provider.enum';
 
 @Entity('users')
+@Index('users_authprovider_providerid_idx', ['authProvider', 'providerId'])
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;

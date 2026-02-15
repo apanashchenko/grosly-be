@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import OpenAI from 'openai';
@@ -18,11 +19,11 @@ export interface AiCallConfig {
 
 @Injectable()
 export class AiClientService {
-  private readonly logger = new Logger(AiClientService.name);
   private readonly openai: OpenAI;
   private readonly inFlight = new Map<string, Promise<unknown>>();
 
   constructor(
+    @InjectPinoLogger(AiClientService.name) private readonly logger: PinoLogger,
     private configService: ConfigService,
     @Inject(REDIS_CLIENT) private redis: Redis,
   ) {
@@ -41,7 +42,7 @@ export class AiClientService {
   async deduplicated<T>(cacheKey: string, fn: () => Promise<T>): Promise<T> {
     const existing = this.inFlight.get(cacheKey);
     if (existing) {
-      this.logger.log({ cacheKey }, 'In-flight dedup HIT');
+      this.logger.info({ cacheKey }, 'In-flight dedup HIT');
       return existing as Promise<T>;
     }
 
@@ -60,7 +61,7 @@ export class AiClientService {
     try {
       const raw = await this.redis.get(cacheKey);
       if (raw) {
-        this.logger.log({ cacheKey }, `AI cache HIT: ${label}`);
+        this.logger.info({ cacheKey }, `AI cache HIT: ${label}`);
         return JSON.parse(raw) as T;
       }
     } catch (error: unknown) {
@@ -105,7 +106,7 @@ export class AiClientService {
       const completion = await this.createCompletion(config);
       const duration = Date.now() - startTime;
 
-      this.logger.log(
+      this.logger.info(
         {
           model: completion.model,
           duration,
@@ -169,7 +170,7 @@ export class AiClientService {
     const completion = await stream.finalChatCompletion();
     const duration = Date.now() - startTime;
 
-    this.logger.log(
+    this.logger.info(
       {
         duration,
         operationName,

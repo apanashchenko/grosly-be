@@ -1,0 +1,26 @@
+app = "grosly-redis"
+primary_region = "fra"
+
+[build]
+  image = "redis:7-alpine"
+
+[[services]]
+  internal_port = 6379
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 6379
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[mounts]
+  source = "redis_data"
+  destination = "/data"
+
+

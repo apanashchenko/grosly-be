@@ -1,10 +1,10 @@
 import {
   Injectable,
-  Logger,
   NotFoundException,
   ForbiddenException,
   ConflictException,
 } from '@nestjs/common';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { Category } from '../entities/category.entity';
@@ -13,9 +13,8 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 
 @Injectable()
 export class CategoriesService {
-  private readonly logger = new Logger(CategoriesService.name);
-
   constructor(
+    @InjectPinoLogger(CategoriesService.name) private readonly logger: PinoLogger,
     @InjectRepository(Category)
     private readonly categoryRepo: Repository<Category>,
   ) {}
@@ -60,7 +59,7 @@ export class CategoriesService {
 
     const saved = await this.categoryRepo.save(category);
 
-    this.logger.log(
+    this.logger.info(
       { id: saved.id, name: saved.name },
       'Custom category created',
     );
@@ -90,7 +89,7 @@ export class CategoriesService {
 
     const saved = await this.categoryRepo.save(category);
 
-    this.logger.log({ id: saved.id }, 'Custom category updated');
+    this.logger.info({ id: saved.id }, 'Custom category updated');
 
     return saved;
   }
@@ -104,7 +103,7 @@ export class CategoriesService {
 
     await this.categoryRepo.remove(category);
 
-    this.logger.log({ id }, 'Custom category deleted');
+    this.logger.info({ id }, 'Custom category deleted');
   }
 
   private generateSlug(name: string): string {

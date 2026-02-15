@@ -1,28 +1,9 @@
+import { randomUUID } from 'crypto';
+import { IncomingMessage } from 'http';
 import { Params } from 'nestjs-pino';
 import { ConfigService } from '@nestjs/config';
 
-// export const loggerConfig: Params = {
-//   pinoHttp: {
-//     level: process.env.LOG_LEVEL ?? 'info',
-//     mixin() {
-//       const cls = ClsServiceManager.getClsService();
-//       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-//       const requestId = cls?.get('requestId');
-//       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-//       return requestId ? { requestId } : {};
-//     },
-//     ...(!isProduction && {
-//       transport: {
-//         target: 'pino-pretty',
-//         options: {
-//           colorize: true,
-//           // translateTime: 'SYS:standard',
-//           singleLine: true,
-//         },
-//       },
-//     }),
-//   },
-// };
+const REQUEST_ID_HEADER = 'x-request-id';
 
 /**
  * Pino logger configuration factory
@@ -41,17 +22,24 @@ export const createPinoConfig = (config: ConfigService): Params => {
             options: {
               colorize: true,
               translateTime: 'HH:MM:ss',
-              ignore: 'pid,hostname',
+              ignore: 'pid,hostname,context',
               singleLine: true,
+              messageFormat: '[{context}] {msg}',
             },
           }
         : undefined, // Production: JSON logs
+      genReqId: (req: IncomingMessage) => {
+        const fromHeader = req.headers[REQUEST_ID_HEADER];
+        return (
+          (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader) ||
+          randomUUID()
+        );
+      },
       autoLogging: true,
       quietReqLogger: false,
-      // Add requestId to all logs within request context
       customProps: (req) => ({
         context: 'HTTP',
-        requestId: req.id, // Propagate requestId to all child logs
+        requestId: req.id,
       }),
       serializers: {
         req: (req: {

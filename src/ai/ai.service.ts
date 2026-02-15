@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { createHash } from 'crypto';
 import { generateCacheKey } from '../cache/cache-key.util';
 import { AiClientService, AiCallConfig } from './ai-client.service';
@@ -98,9 +99,10 @@ const PROMPT_VERSIONS = {
 
 @Injectable()
 export class AiService {
-  private readonly logger = new Logger(AiService.name);
-
-  constructor(private readonly client: AiClientService) {}
+  constructor(
+    @InjectPinoLogger(AiService.name) private readonly logger: PinoLogger,
+    private readonly client: AiClientService,
+  ) {}
 
   // ==================== PROMPT / CONFIG BUILDERS ====================
 
@@ -494,7 +496,7 @@ Rules:
     if (cached) return cached;
 
     return this.client.deduplicated(config.cacheKey, async () => {
-      this.logger.log(
+      this.logger.info(
         {
           cacheKey: config.cacheKey,
           recipeTextLength: recipeText.length,
@@ -509,7 +511,7 @@ Rules:
         'extractIngredients',
       );
 
-      this.logger.log(
+      this.logger.info(
         { ingredientsCount: parsed.ingredients.length, error: parsed.error },
         'Ingredients extracted successfully',
       );
@@ -554,7 +556,7 @@ Rules:
     if (cached) return cached;
 
     return this.client.deduplicated(config.cacheKey, async () => {
-      this.logger.log(
+      this.logger.info(
         {
           cacheKey: config.cacheKey,
           imageHash,
@@ -570,7 +572,7 @@ Rules:
         'extractIngredientsFromImage',
       );
 
-      this.logger.log(
+      this.logger.info(
         { ingredientsCount: parsed.ingredients.length, error: parsed.error },
         'Ingredients extracted from image successfully',
       );
@@ -610,7 +612,7 @@ Rules:
     if (cached) return cached;
 
     return this.client.deduplicated(config.cacheKey, async () => {
-      this.logger.log(
+      this.logger.info(
         {
           cacheKey: config.cacheKey,
           queryLength: userQuery.length,
@@ -624,7 +626,7 @@ Rules:
         'generateMealPlan',
       );
 
-      this.logger.log(
+      this.logger.info(
         {
           numberOfPeople: result.parsedRequest.numberOfPeople,
           numberOfDays: result.parsedRequest.numberOfDays,
@@ -662,7 +664,7 @@ Rules:
     if (cached) return cached;
 
     return this.client.deduplicated(config.cacheKey, async () => {
-      this.logger.log(
+      this.logger.info(
         {
           cacheKey: config.cacheKey,
           queryLength: dishQuery.length,
@@ -676,7 +678,7 @@ Rules:
         'generateSingleRecipe',
       );
 
-      this.logger.log(
+      this.logger.info(
         {
           numberOfPeople: result.numberOfPeople,
           dishName: result.recipe.dishName,
@@ -714,7 +716,7 @@ Rules:
     if (cached) return cached;
 
     return this.client.deduplicated(config.cacheKey, async () => {
-      this.logger.log(
+      this.logger.info(
         {
           cacheKey: config.cacheKey,
           ingredientsCount: ingredients.length,
@@ -747,7 +749,7 @@ Rules:
         });
       });
 
-      this.logger.log(
+      this.logger.info(
         { recipesCount: result.suggestedRecipes.length },
         'Recipes suggested successfully',
       );
@@ -782,7 +784,7 @@ Rules:
     if (cached) return cached;
 
     return this.client.deduplicated(cacheKey, async () => {
-      this.logger.log(
+      this.logger.info(
         {
           cacheKey,
           itemsCount: items.length,
@@ -902,7 +904,7 @@ Rules:
         parsed.mappings.reduce((sum, m) => sum + m.confidence, 0) /
         parsed.mappings.length;
 
-      this.logger.log(
+      this.logger.info(
         {
           mappingsCount: parsed.mappings.length,
           avgConfidence: Math.round(avgConfidence * 100) / 100,
@@ -942,7 +944,7 @@ Rules:
     );
     if (cached) return cached;
 
-    this.logger.log(
+    this.logger.info(
       {
         cacheKey: config.cacheKey,
         recipeTextLength: recipeText.length,
@@ -992,7 +994,7 @@ Rules:
     );
     if (cached) return cached;
 
-    this.logger.log(
+    this.logger.info(
       {
         cacheKey: config.cacheKey,
         queryLength: dishQuery.length,
@@ -1035,7 +1037,7 @@ Rules:
     );
     if (cached) return cached;
 
-    this.logger.log(
+    this.logger.info(
       {
         cacheKey: config.cacheKey,
         queryLength: userQuery.length,
@@ -1078,7 +1080,7 @@ Rules:
     );
     if (cached) return cached;
 
-    this.logger.log(
+    this.logger.info(
       {
         cacheKey: config.cacheKey,
         ingredientsCount: ingredients.length,

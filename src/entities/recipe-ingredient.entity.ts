@@ -9,6 +9,7 @@ import { Recipe } from './recipe.entity';
 import { Category } from './category.entity';
 
 @Entity('recipe_ingredients')
+@Index('recipe_ingredients_category_id_idx', ['categoryId'])
 export class RecipeIngredient {
   @PrimaryGeneratedColumn('uuid')
   id: string;
