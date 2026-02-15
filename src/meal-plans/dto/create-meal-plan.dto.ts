@@ -70,6 +70,17 @@ export class CreateMealPlanDto {
   numberOfPeople?: number;
 
   @ApiPropertyOptional({
+    description: 'Original user input that was used to generate this meal plan',
+    example: 'план на тиждень для 2 людей',
+    maxLength: 5000,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  originalInput?: string;
+
+  @ApiPropertyOptional({
     description: 'Recipes to create and add to the meal plan',
     type: [SaveRecipeDto],
   })

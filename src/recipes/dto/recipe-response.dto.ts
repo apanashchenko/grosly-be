@@ -86,6 +86,14 @@ export class RecipeResponseDto {
   })
   text: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Original user input that was used to generate/parse this recipe',
+    example: 'борщ на 4 порції',
+    nullable: true,
+  })
+  originalInput: string | null;
+
   @ApiProperty({
     description: 'Recipe ingredients',
     type: [RecipeIngredientResponseDto],
@@ -116,6 +124,7 @@ export class RecipeResponseDto {
     dto.title = entity.title;
     dto.source = entity.source;
     dto.text = entity.text;
+    dto.originalInput = entity.originalInput ?? null;
     dto.ingredients = (entity.ingredients ?? [])
       .sort((a, b) => a.position - b.position)
       .map((ing) => RecipeIngredientResponseDto.fromEntity(ing));

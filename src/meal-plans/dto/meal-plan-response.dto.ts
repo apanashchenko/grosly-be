@@ -51,6 +51,14 @@ export class MealPlanResponseDto {
   @ApiProperty({ example: 2 })
   numberOfPeople: number;
 
+  @ApiPropertyOptional({
+    description:
+      'Original user input that was used to generate this meal plan',
+    example: 'план на тиждень для 2 людей',
+    nullable: true,
+  })
+  originalInput: string | null;
+
   @ApiProperty({ type: [MealPlanRecipeResponseDto] })
   recipes: MealPlanRecipeResponseDto[];
 
@@ -67,6 +75,7 @@ export class MealPlanResponseDto {
     dto.description = entity.description ?? null;
     dto.numberOfDays = entity.numberOfDays;
     dto.numberOfPeople = entity.numberOfPeople;
+    dto.originalInput = entity.originalInput ?? null;
     dto.recipes = (entity.mealPlanRecipes || [])
       .sort((a, b) => {
         if (a.dayNumber !== b.dayNumber) return a.dayNumber - b.dayNumber;

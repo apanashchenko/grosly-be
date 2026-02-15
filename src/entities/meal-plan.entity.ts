@@ -28,6 +28,9 @@ export class MealPlan {
   @Column({ type: 'int', default: 1 })
   numberOfPeople: number;
 
+  @Column({ type: 'varchar', length: 5000, nullable: true })
+  originalInput: string | null;
+
   @ManyToOne(() => User, (user) => user.mealPlans, { onDelete: 'CASCADE' })
   user: User;
 

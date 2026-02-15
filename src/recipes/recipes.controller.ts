@@ -382,9 +382,10 @@ export class RecipesController {
     description: 'Internal server error or OpenAI API error',
   })
   async suggestRecipe(
+    @CurrentUser() user: User,
     @Body(new ValidationPipe()) suggestRecipeDto: SuggestRecipeDto,
   ): Promise<SuggestRecipeResponseDto> {
-    return this.recipesService.suggestRecipe(suggestRecipeDto);
+    return this.recipesService.suggestRecipe(suggestRecipeDto, user.id);
   }
 
   // ==================== STREAMED AI OPERATIONS (SSE) ====================
@@ -458,6 +459,7 @@ export class RecipesController {
       'Same as POST /recipes/suggest but streams raw JSON tokens via SSE. Final event contains the parsed result.',
   })
   async suggestRecipeStream(
+    @CurrentUser() user: User,
     @Body(new ValidationPipe()) suggestRecipeDto: SuggestRecipeDto,
     @Res() res: Response,
   ): Promise<void> {
@@ -466,6 +468,7 @@ export class RecipesController {
     try {
       const result = await this.recipesService.suggestRecipeStreamed(
         suggestRecipeDto,
+        user.id,
         (delta) => this.writeSseEvent(res, 'chunk', { text: delta }),
       );
       this.writeSseEvent(res, 'done', result);

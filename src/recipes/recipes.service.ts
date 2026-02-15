@@ -15,6 +15,8 @@ import {
 } from 'nestjs-paginate';
 import type { PaginateQuery } from 'nestjs-paginate';
 import { AiService, Recipe as AiRecipe } from '../ai/ai.service';
+import { AiRequestLogService } from '../ai/ai-request-log.service';
+import { UsageAction } from '../subscription/enums/usage-action.enum';
 import { CategoriesService } from '../categories/categories.service';
 import { Category } from '../entities/category.entity';
 import { Recipe } from '../entities/recipe.entity';
@@ -56,6 +58,7 @@ export class RecipesService {
     @InjectRepository(RecipeIngredient)
     private readonly ingredientRepo: Repository<RecipeIngredient>,
     private aiService: AiService,
+    private aiRequestLogService: AiRequestLogService,
     private categoriesService: CategoriesService,
   ) {}
 
@@ -72,6 +75,7 @@ export class RecipesService {
       title,
       source: dto.source,
       text: dto.text,
+      originalInput: dto.originalInput ?? null,
       userId,
       ingredients: dto.ingredients.map((ing, index) =>
         this.ingredientRepo.create({
@@ -279,11 +283,17 @@ export class RecipesService {
       name: cat.name,
     }));
 
-    const aiResult = await this.aiService.extractIngredientsFromRecipe(
-      parseRecipeDto.recipeText,
-      'uk',
-      categoryHints,
-    );
+    const aiResult = await this.aiRequestLogService.logRequest({
+      userId,
+      action: UsageAction.RECIPE_PARSE,
+      input: parseRecipeDto.recipeText,
+      operation: () =>
+        this.aiService.extractIngredientsFromRecipe(
+          parseRecipeDto.recipeText,
+          'uk',
+          categoryHints,
+        ),
+    });
 
     if (aiResult.error) {
       throw new BadRequestException(aiResult.error);
@@ -333,12 +343,18 @@ export class RecipesService {
       name: cat.name,
     }));
 
-    const aiResult = await this.aiService.extractIngredientsFromImage(
-      file.buffer,
-      file.mimetype,
-      'uk',
-      categoryHints,
-    );
+    const aiResult = await this.aiRequestLogService.logRequest({
+      userId,
+      action: UsageAction.PARSE_IMAGE,
+      input: `[image ${file.mimetype} ${Math.round(file.size / 1024)}KB]`,
+      operation: () =>
+        this.aiService.extractIngredientsFromImage(
+          file.buffer,
+          file.mimetype,
+          'uk',
+          categoryHints,
+        ),
+    });
 
     if (aiResult.error) {
       throw new BadRequestException(aiResult.error);
@@ -384,11 +400,17 @@ export class RecipesService {
       name: cat.name,
     }));
 
-    const aiResponse = await this.aiService.generateSingleRecipe(
-      dto.query,
-      dto.language || 'uk',
-      categoryHints,
-    );
+    const aiResponse = await this.aiRequestLogService.logRequest({
+      userId,
+      action: UsageAction.RECIPE_GENERATION,
+      input: dto.query,
+      operation: () =>
+        this.aiService.generateSingleRecipe(
+          dto.query,
+          dto.language || 'uk',
+          categoryHints,
+        ),
+    });
 
     const { numberOfPeople } = aiResponse;
     if (numberOfPeople < this.MIN_PEOPLE || numberOfPeople > this.MAX_PEOPLE) {
@@ -435,11 +457,17 @@ export class RecipesService {
       name: cat.name,
     }));
 
-    const aiResponse = await this.aiService.generateMealPlanFromUserQuery(
-      generateMealPlanDto.query,
-      generateMealPlanDto.language || 'uk',
-      categoryHints,
-    );
+    const aiResponse = await this.aiRequestLogService.logRequest({
+      userId,
+      action: UsageAction.RECIPE_GENERATION,
+      input: generateMealPlanDto.query,
+      operation: () =>
+        this.aiService.generateMealPlanFromUserQuery(
+          generateMealPlanDto.query,
+          generateMealPlanDto.language || 'uk',
+          categoryHints,
+        ),
+    });
 
     // Business-level validation of AI-parsed values
     this.validateBusinessConstraints(aiResponse.parsedRequest);
@@ -509,6 +537,7 @@ export class RecipesService {
 
   async suggestRecipe(
     suggestRecipeDto: SuggestRecipeDto,
+    userId: string,
   ): Promise<SuggestRecipeResponseDto> {
     this.logger.info(
       {
@@ -518,11 +547,17 @@ export class RecipesService {
       'Suggesting recipes from available ingredients',
     );
 
-    const result = await this.aiService.suggestRecipesFromIngredients(
-      suggestRecipeDto.ingredients,
-      suggestRecipeDto.language || 'uk',
-      suggestRecipeDto.strictMode ?? false,
-    );
+    const result = await this.aiRequestLogService.logRequest({
+      userId,
+      action: UsageAction.RECIPE_SUGGEST,
+      input: suggestRecipeDto.ingredients.join(', '),
+      operation: () =>
+        this.aiService.suggestRecipesFromIngredients(
+          suggestRecipeDto.ingredients,
+          suggestRecipeDto.language || 'uk',
+          suggestRecipeDto.strictMode ?? false,
+        ),
+    });
 
     // Business validation: ensure we got 0-3 recipes (0 is valid when no recipe is possible)
     if (result.suggestedRecipes.length > 3) {
@@ -583,12 +618,18 @@ export class RecipesService {
       name: cat.name,
     }));
 
-    const aiResponse = await this.aiService.generateSingleRecipeStreamed(
-      dto.query,
-      dto.language || 'uk',
-      categoryHints,
-      onChunk,
-    );
+    const aiResponse = await this.aiRequestLogService.logRequest({
+      userId,
+      action: UsageAction.RECIPE_GENERATION,
+      input: dto.query,
+      operation: () =>
+        this.aiService.generateSingleRecipeStreamed(
+          dto.query,
+          dto.language || 'uk',
+          categoryHints,
+          onChunk,
+        ),
+    });
 
     const { numberOfPeople } = aiResponse;
     if (numberOfPeople < this.MIN_PEOPLE || numberOfPeople > this.MAX_PEOPLE) {
@@ -616,12 +657,18 @@ export class RecipesService {
       name: cat.name,
     }));
 
-    const aiResponse = await this.aiService.generateMealPlanStreamed(
-      dto.query,
-      dto.language || 'uk',
-      categoryHints,
-      onChunk,
-    );
+    const aiResponse = await this.aiRequestLogService.logRequest({
+      userId,
+      action: UsageAction.RECIPE_GENERATION,
+      input: dto.query,
+      operation: () =>
+        this.aiService.generateMealPlanStreamed(
+          dto.query,
+          dto.language || 'uk',
+          categoryHints,
+          onChunk,
+        ),
+    });
 
     this.validateBusinessConstraints(aiResponse.parsedRequest);
 
@@ -636,13 +683,20 @@ export class RecipesService {
 
   async suggestRecipeStreamed(
     dto: SuggestRecipeDto,
+    userId: string,
     onChunk: (delta: string) => void,
   ): Promise<SuggestRecipeResponseDto> {
-    return this.aiService.suggestRecipesStreamed(
-      dto.ingredients,
-      dto.language || 'uk',
-      dto.strictMode ?? false,
-      onChunk,
-    );
+    return this.aiRequestLogService.logRequest({
+      userId,
+      action: UsageAction.RECIPE_SUGGEST,
+      input: dto.ingredients.join(', '),
+      operation: () =>
+        this.aiService.suggestRecipesStreamed(
+          dto.ingredients,
+          dto.language || 'uk',
+          dto.strictMode ?? false,
+          onChunk,
+        ),
+    });
   }
 }

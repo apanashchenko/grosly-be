@@ -106,15 +106,27 @@ export class SaveRecipeDto {
     description: 'Full recipe text content (AI-formatted recipe for display)',
     example:
       'Borscht\n\nIngredients:\n- beetroot 2 pcs\n- potatoes 3 pcs\n\nInstructions:\n1. Peel and dice beetroot...',
-    maxLength: 3000,
+    maxLength: 5000,
   })
   @Transform(({ value }: { value: string }) =>
     value?.trim()?.replace(/<[^>]*>/g, ''),
   )
   @IsString()
   @IsNotEmpty()
-  @MaxLength(3000)
+  @MaxLength(5000)
   text: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Original user input that was used to generate/parse this recipe',
+    example: 'борщ на 4 порції',
+    maxLength: 5000,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  originalInput?: string;
 
   @ApiProperty({
     description: 'Recipe ingredients',
@@ -147,7 +159,7 @@ export class UpdateRecipeDto {
     description: 'Updated recipe text content',
     example:
       'Borscht\n\nIngredients:\n- beetroot 2 pcs\n- potatoes 3 pcs\n\nInstructions:\n1. Peel and dice beetroot...',
-    maxLength: 3000,
+    maxLength: 5000,
   })
   @IsOptional()
   @Transform(({ value }: { value: string }) =>
@@ -155,7 +167,7 @@ export class UpdateRecipeDto {
   )
   @IsString()
   @IsNotEmpty()
-  @MaxLength(3000)
+  @MaxLength(5000)
   text?: string;
 
   @ApiPropertyOptional({

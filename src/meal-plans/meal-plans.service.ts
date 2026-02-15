@@ -42,6 +42,7 @@ export class MealPlansService {
       description: dto.description ?? null,
       numberOfDays: dto.numberOfDays ?? 1,
       numberOfPeople: dto.numberOfPeople ?? 1,
+      originalInput: dto.originalInput ?? null,
       userId,
     });
 

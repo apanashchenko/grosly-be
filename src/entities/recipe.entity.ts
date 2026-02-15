@@ -27,6 +27,9 @@ export class Recipe {
   @Column({ type: 'text' })
   text: string;
 
+  @Column({ type: 'varchar', length: 5000, nullable: true })
+  originalInput: string | null;
+
   @ManyToOne(() => User, (user) => user.recipes, { onDelete: 'CASCADE' })
   user: User;
 
