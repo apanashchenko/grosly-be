@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -21,6 +21,7 @@ import { JwtAuthGuard } from './auth/guards';
 import { SpaceMemberGuard } from './spaces/guards';
 import { FeatureGuard, UsageLimitGuard } from './subscription/guards';
 import { createPinoConfig } from './config/pino.config';
+import { LoggerContextInterceptor } from './common/interceptors/logger-context.interceptor';
 
 @Module({
   imports: [
@@ -77,6 +78,11 @@ import { createPinoConfig } from './config/pino.config';
     {
       provide: APP_GUARD,
       useClass: UsageLimitGuard,
+    },
+    // Add userId to pino log context for every authenticated request
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: LoggerContextInterceptor,
     },
   ],
 })
