@@ -32,7 +32,7 @@ export class CsvParserService {
         trim: true,
         skip_empty_lines: true,
         relax_column_count: true,
-      }) as Record<string, string>[];
+      });
     } catch {
       throw new BadRequestException(
         'Failed to parse CSV file. Ensure it is a valid UTF-8 CSV with headers.',
