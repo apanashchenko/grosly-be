@@ -17,6 +17,7 @@ import { UserPreferencesModule } from './user-preferences/user-preferences.modul
 import { SubscriptionModule } from './subscription/subscription.module';
 import { SpacesModule } from './spaces/spaces.module';
 import { MealPlansModule } from './meal-plans/meal-plans.module';
+import { StoreProductsModule } from './store-products/store-products.module';
 import { JwtAuthGuard } from './auth/guards';
 import { SpaceMemberGuard } from './spaces/guards';
 import { FeatureGuard, UsageLimitGuard } from './subscription/guards';
@@ -50,6 +51,7 @@ import { LoggerContextInterceptor } from './common/interceptors/logger-context.i
     SubscriptionModule,
     SpacesModule,
     MealPlansModule,
+    StoreProductsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -29,7 +29,7 @@ async function bootstrap() {
 
   // Swagger configuration
   const config = new DocumentBuilder()
-    .setTitle('Grosly API')
+    .setTitle('Plistum API')
     .setDescription('API for generating shopping lists from recipes using AI')
     .setVersion('1.0')
     .addBearerAuth()

@@ -1,4 +1,4 @@
-# 🛡️ Validation Summary for Grosly
+# 🛡️ Validation Summary for Plistum
 
 **Last updated:** 2026-02-07
 **Current approach:** Blacklist (forbid dangerous characters)

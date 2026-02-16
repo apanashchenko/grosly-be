@@ -1,6 +1,6 @@
-# PgBouncer connection pooler for grosly
-app = "grosly-pgbouncer"
-org = "grosly"
+# PgBouncer connection pooler for plistum
+app = "plistum-pgbouncer"
+org = "plistum"
 primary_region = "fra"
 
 [build]
@@ -8,9 +8,9 @@ primary_region = "fra"
 
 [env]
   # Connection to PostgreSQL (DB_HOST and DB_PASSWORD via secrets - IPv6 address)
-  # DB_HOST is set via: fly secrets set DB_HOST="<postgres-ipv6>" -a grosly-pgbouncer
+  # DB_HOST is set via: fly secrets set DB_HOST="<postgres-ipv6>" -a plistum-pgbouncer
   DB_PORT = "5432"
-  DB_NAME = "grosly"
+  DB_NAME = "plistum"
   DB_USER = "postgres"
 
   # PgBouncer settings

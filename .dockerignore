@@ -9,3 +9,5 @@ dist
 coverage
 test
 docker-compose*.yml
+scripts
+output

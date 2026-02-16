@@ -1,4 +1,4 @@
-app = "grosly-redis"
+app = "plistum-redis"
 primary_region = "fra"
 
 [build]

@@ -1,4 +1,4 @@
-app = "grosly-postgres"
+app = "plistum-postgres"
 primary_region = "fra"
 
 [build]
@@ -6,7 +6,7 @@ primary_region = "fra"
 
 [env]
   POSTGRES_USER = "postgres"
-  POSTGRES_DB = "grosly"
+  POSTGRES_DB = "plistum"
 
 # PostgreSQL configuration with increased max_connections
 [processes]
@@ -31,3 +31,4 @@ primary_region = "fra"
 [mounts]
   source = "postgres_data"
   destination = "/var/lib/postgresql"
+  initial_size = "5gb"

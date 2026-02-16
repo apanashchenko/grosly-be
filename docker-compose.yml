@@ -3,20 +3,20 @@ version: '3.8'
 services:
   postgres:
     image: postgres:18
-    container_name: grosly-postgres
+    container_name: plistum-postgres
     restart: unless-stopped
     ports:
       - '5432:5432'
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: grosly
+      POSTGRES_DB: plistum
     volumes:
       - pgdata:/var/lib/postgresql
 
   redis:
     image: redis:7-alpine
-    container_name: grosly-redis
+    container_name: plistum-redis
     restart: unless-stopped
     ports:
       - '6379:6379'

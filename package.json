@@ -1,5 +1,5 @@
 {
-  "name": "grosly",
+  "name": "plistum",
   "version": "0.0.1",
   "description": "",
   "author": "",
@@ -21,9 +21,15 @@
     "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d src/database/datasource.ts",
     "migration:generate": "pnpm typeorm migration:generate src/migrations/InitSchema",
     "migration:create": "pnpm typeorm migration:create src/migrations/InitSchema",
-    "migration:run": "node ./node_modules/typeorm/cli.js migration:run -d dist/database/datasource.js",
-    "migration:revert": "node ./node_modules/typeorm/cli.js migration:revert -d dist/database/datasource.js",
-    "db:seed": "dotenv -- ts-node -r tsconfig-paths/register src/database/run-seed.ts"
+    "migration:run": "node ./node_modules/typeorm/cli.js migration:run -d dist/src/database/datasource.js",
+    "migration:revert": "node ./node_modules/typeorm/cli.js migration:revert -d dist/src/database/datasource.js",
+    "db:seed": "dotenv -- ts-node -r tsconfig-paths/register src/database/run-seed.ts",
+    "parse:atb": "npx ts-node scripts/parse-atb.ts",
+    "parse:silpo": "npx ts-node scripts/parse-silpo.ts",
+    "parse:varus": "npx ts-node scripts/parse-varus.ts",
+    "parse:auchan": "npx ts-node scripts/parse-auchan.ts",
+    "parse:metro": "npx ts-node scripts/parse-metro.ts",
+    "parse:novus": "npx ts-node scripts/parse-novus.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -40,6 +46,7 @@
     "cheerio": "^1.2.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
+    "csv-parse": "^6.1.0",
     "dotenv": "^17.2.4",
     "google-auth-library": "^10.5.0",
     "ioredis": "^5.9.2",
@@ -75,7 +82,10 @@
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^16.0.0",
     "jest": "^30.0.0",
+    "playwright": "^1.58.1",
+    "playwright-extra": "^4.3.6",
     "prettier": "^3.4.2",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
@@ -83,7 +93,6 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
-    "playwright": "^1.58.1",
     "typescript-eslint": "^8.20.0"
   },
   "jest": {
