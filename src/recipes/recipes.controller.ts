@@ -45,6 +45,7 @@ import {
   SuggestRecipeResponseDto,
 } from './dto/suggest-recipe.dto';
 import {
+  RecipeIngredientItemDto,
   SaveRecipeDto,
   UpdateRecipeDto,
   UpdateRecipeIngredientDto,
@@ -183,6 +184,25 @@ export class RecipesController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
     return await this.recipesService.delete(user.id, id);
+  }
+
+  @Post(':recipeId/ingredients')
+  @ApiOperation({
+    summary: 'Add an ingredient to a recipe',
+    description: 'Adds a new ingredient to an existing saved recipe',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Ingredient added, returns full recipe',
+    type: RecipeResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Recipe not found' })
+  async addIngredient(
+    @CurrentUser() user: User,
+    @Param('recipeId', ParseUUIDPipe) recipeId: string,
+    @Body(new ValidationPipe()) dto: RecipeIngredientItemDto,
+  ): Promise<RecipeResponseDto> {
+    return await this.recipesService.addIngredient(user.id, recipeId, dto);
   }
 
   @Patch(':recipeId/ingredients/:ingredientId')

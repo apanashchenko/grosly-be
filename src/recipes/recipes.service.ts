@@ -35,6 +35,7 @@ import {
   SuggestRecipeResponseDto,
 } from './dto/suggest-recipe.dto';
 import {
+  RecipeIngredientItemDto,
   SaveRecipeDto,
   UpdateRecipeDto,
   UpdateRecipeIngredientDto,
@@ -222,6 +223,45 @@ export class RecipesService {
     await this.ingredientRepo.save(ingredient);
 
     this.logger.info({ recipeId, ingredientId }, 'Recipe ingredient updated');
+
+    return this.findOne(userId, recipeId);
+  }
+
+  async addIngredient(
+    userId: string,
+    recipeId: string,
+    dto: RecipeIngredientItemDto,
+  ): Promise<RecipeResponseDto> {
+    const recipe = await this.recipeRepo.findOne({ where: { id: recipeId } });
+
+    if (!recipe) {
+      throw new NotFoundException(`Recipe ${recipeId} not found`);
+    }
+
+    if (recipe.userId !== userId) {
+      throw new ForbiddenException();
+    }
+
+    const maxPosition = recipe.ingredients.length
+      ? Math.max(...recipe.ingredients.map((i) => i.position))
+      : -1;
+
+    const ingredient = this.ingredientRepo.create({
+      recipeId,
+      name: dto.name,
+      quantity: dto.quantity,
+      unit: dto.unit,
+      note: dto.note ?? null,
+      categoryId: dto.categoryId ?? null,
+      position: maxPosition + 1,
+    });
+
+    await this.ingredientRepo.save(ingredient);
+
+    this.logger.info(
+      { recipeId, ingredientId: ingredient.id },
+      'Recipe ingredient added',
+    );
 
     return this.findOne(userId, recipeId);
   }
