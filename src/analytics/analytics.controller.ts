@@ -29,7 +29,7 @@ export class AnalyticsController {
   @ApiOperation({
     summary: 'Get analytics overview',
     description:
-      'Returns aggregated analytics: top products by frequency, item distribution by categories, and shopping list creation activity grouped by week or month.',
+      'Returns aggregated analytics filtered by period: top products by frequency, item distribution by categories, and shopping list creation activity.',
   })
   @ApiResponse({
     status: 200,

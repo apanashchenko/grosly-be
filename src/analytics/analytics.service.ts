@@ -29,9 +29,13 @@ export class AnalyticsService {
     topProductsLimit: number,
     period: ActivityPeriod,
   ): Promise<AnalyticsOverviewResponseDto> {
-    const topProducts = await this.getTopProducts(userId, spaceId, topProductsLimit);
-    const categoriesDistribution = await this.getCategoriesDistribution(userId, spaceId);
-    const activity = await this.getActivity(userId, spaceId, period);
+    const startDate = this.getStartDate(period);
+
+    const [topProducts, categoriesDistribution, activity] = await Promise.all([
+      this.getTopProducts(userId, spaceId, topProductsLimit, startDate),
+      this.getCategoriesDistribution(userId, spaceId, startDate),
+      this.getActivity(userId, spaceId, period, startDate),
+    ]);
 
     this.logger.debug(
       { userId, spaceId, topProductsLimit, period },
@@ -45,6 +49,7 @@ export class AnalyticsService {
     userId: string,
     spaceId: string | null,
     limit: number,
+    startDate: Date,
   ): Promise<TopProductItemDto[]> {
     const qb = this.itemRepo
       .createQueryBuilder('item')
@@ -53,6 +58,7 @@ export class AnalyticsService {
       .addSelect('COUNT(*)::int', 'count');
 
     this.applyScope(qb, userId, spaceId);
+    qb.andWhere('list.createdAt >= :startDate', { startDate });
 
     return qb
       .groupBy('LOWER(TRIM(item.name))')
@@ -64,6 +70,7 @@ export class AnalyticsService {
   private async getCategoriesDistribution(
     userId: string,
     spaceId: string | null,
+    startDate: Date,
   ): Promise<CategoryDistributionItemDto[]> {
     const qb = this.itemRepo
       .createQueryBuilder('item')
@@ -76,6 +83,7 @@ export class AnalyticsService {
       .addSelect('COUNT(*)::int', 'count');
 
     this.applyScope(qb, userId, spaceId);
+    qb.andWhere('list.createdAt >= :startDate', { startDate });
 
     return qb
       .groupBy('item.categoryId')
@@ -90,9 +98,8 @@ export class AnalyticsService {
     userId: string,
     spaceId: string | null,
     period: ActivityPeriod,
+    startDate: Date,
   ): Promise<ActivityItemDto[]> {
-    const startDate = this.getStartDate(period);
-
     const dateExpr = "TO_CHAR(list.createdAt, 'YYYY-MM-DD')";
 
     const qb = this.shoppingListRepo
@@ -116,7 +123,6 @@ export class AnalyticsService {
   private getStartDate(period: ActivityPeriod): Date {
     const now = new Date();
     if (period === 'week') {
-      // Start from Monday of the current week
       const start = new Date(now);
       const day = start.getDay();
       const diff = day === 0 ? -6 : 1 - day;
@@ -124,7 +130,6 @@ export class AnalyticsService {
       start.setHours(0, 0, 0, 0);
       return start;
     }
-    // month — first day of the current month
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     start.setHours(0, 0, 0, 0);
     return start;
@@ -147,7 +152,6 @@ export class AnalyticsService {
     const filled: ActivityItemDto[] = [];
     const now = new Date();
 
-    // Find Monday of the current week
     const monday = new Date(now);
     const day = monday.getDay();
     const diff = day === 0 ? -6 : 1 - day;

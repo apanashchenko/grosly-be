@@ -21,7 +21,7 @@ export class AnalyticsQueryDto {
 
   @ApiPropertyOptional({
     description:
-      'Activity grouping period: week returns daily data for current week (Mon-Sun), month returns daily data for current month',
+      'Time period filter applied to all metrics: week (current Mon-Sun) or month (current month)',
     enum: ['week', 'month'],
     default: 'week',
     example: 'week',

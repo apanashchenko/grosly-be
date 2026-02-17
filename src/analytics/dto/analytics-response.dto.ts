@@ -45,7 +45,7 @@ export class CategoryDistributionItemDto {
 
 export class ActivityItemDto {
   @ApiProperty({
-    description: 'Period label: "2026-02-17" for week, "2026-02" for month',
+    description: 'Date label in YYYY-MM-DD format',
     example: '2026-02-17',
   })
   date: string;
@@ -59,19 +59,19 @@ export class ActivityItemDto {
 
 export class AnalyticsOverviewResponseDto {
   @ApiProperty({
-    description: 'Most frequently added products',
+    description: 'Most frequently added products within the selected period',
     type: [TopProductItemDto],
   })
   topProducts: TopProductItemDto[];
 
   @ApiProperty({
-    description: 'Item counts per category',
+    description: 'Item counts per category within the selected period',
     type: [CategoryDistributionItemDto],
   })
   categoriesDistribution: CategoryDistributionItemDto[];
 
   @ApiProperty({
-    description: 'Shopping lists created per period (week or month)',
+    description: 'Shopping lists created per day within the selected period',
     type: [ActivityItemDto],
   })
   activity: ActivityItemDto[];
