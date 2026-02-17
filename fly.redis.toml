@@ -1,4 +1,4 @@
-app = "plistum-redis"
+app = "spysko-redis"
 primary_region = "fra"
 
 [build]

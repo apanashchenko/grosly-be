@@ -1,4 +1,4 @@
-app = "plistum-postgres"
+app = "spysko-postgres"
 primary_region = "fra"
 
 [build]
@@ -6,7 +6,7 @@ primary_region = "fra"
 
 [env]
   POSTGRES_USER = "postgres"
-  POSTGRES_DB = "plistum"
+  POSTGRES_DB = "spysko"
 
 # PostgreSQL configuration with increased max_connections
 [processes]

@@ -2,8 +2,8 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'plistum'
-org = 'plistum'
+app = 'spysko'
+org = 'spysko'
 primary_region = 'fra'
 
 [build]

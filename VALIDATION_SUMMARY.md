@@ -1,4 +1,4 @@
-# 🛡️ Validation Summary for Plistum
+# 🛡️ Validation Summary for Spysko
 
 **Last updated:** 2026-02-07
 **Current approach:** Blacklist (forbid dangerous characters)

@@ -11,7 +11,7 @@ export const getTypeOrmConfig = (
     port: config.get<number>('DB_PORT') || 5432,
     username: config.get<string>('DB_USERNAME') || 'postgres',
     password: config.get<string>('DB_PASSWORD') || '',
-    database: config.get<string>('DB_NAME') || 'plistum',
+    database: config.get<string>('DB_NAME') || 'spysko',
     entities: [__dirname + '/../**/*.entity{.ts,.js}'],
     synchronize: config.get<string>('DB_SYNCHRONIZE') === 'true',
     namingStrategy: new SnakeNamingStrategy(),

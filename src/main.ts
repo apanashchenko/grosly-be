@@ -29,7 +29,7 @@ async function bootstrap() {
 
   // Swagger configuration
   const config = new DocumentBuilder()
-    .setTitle('Plistum API')
+    .setTitle('Spysko API')
     .setDescription('API for generating shopping lists from recipes using AI')
     .setVersion('1.0')
     .addBearerAuth()

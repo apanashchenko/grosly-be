@@ -1,6 +1,6 @@
-# PgBouncer connection pooler for plistum
-app = "plistum-pgbouncer"
-org = "plistum"
+# PgBouncer connection pooler for spysko
+app = "spysko-pgbouncer"
+org = "spysko"
 primary_region = "fra"
 
 [build]
@@ -8,9 +8,9 @@ primary_region = "fra"
 
 [env]
   # Connection to PostgreSQL (DB_HOST and DB_PASSWORD via secrets - IPv6 address)
-  # DB_HOST is set via: fly secrets set DB_HOST="<postgres-ipv6>" -a plistum-pgbouncer
+  # DB_HOST is set via: fly secrets set DB_HOST="<postgres-ipv6>" -a spysko-pgbouncer
   DB_PORT = "5432"
-  DB_NAME = "plistum"
+  DB_NAME = "spysko"
   DB_USER = "postgres"
 
   # PgBouncer settings
@@ -45,7 +45,19 @@ primary_region = "fra"
   LISTEN_ADDR = "*"
   LISTEN_PORT = "5432"
 
+[[services]]
+  internal_port = 5432
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 5432
+
 [[vm]]
   memory = "256mb"
   cpu_kind = "shared"
   cpus = 1
+  count = 1

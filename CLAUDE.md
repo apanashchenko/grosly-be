@@ -1,8 +1,8 @@
-# Plistum - AI-Powered Shopping List Generator
+# Spysko - AI-Powered Shopping List Generator
 
 ## Опис проекту
 
-**Plistum** - це додаток для автоматичної генерації списків продуктів з рецептів за допомогою штучного інтелекту. Натхнення взято з [neomi.app](https://neomi.app/).
+**Spysko** - це додаток для автоматичної генерації списків продуктів з рецептів за допомогою штучного інтелекту. Натхнення взято з [neomi.app](https://neomi.app/).
 
 ### Основна ідея
 Користувач хоче приготувати страву (наприклад, борщ), просто вводить назву страви, а система автоматично генерує рецепт і структурований список всіх необхідних інгредієнтів для покупки.
@@ -66,7 +66,7 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_USERNAME=postgres
 DB_PASSWORD=postgres
-DB_NAME=plistum
+DB_NAME=spysko
 DB_SYNCHRONIZE=true
 GOOGLE_CLIENT_ID=...apps.googleusercontent.com
 JWT_SECRET=...
