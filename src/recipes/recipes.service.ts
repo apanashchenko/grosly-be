@@ -179,6 +179,55 @@ export class RecipesService {
     return RecipeResponseDto.fromEntity(saved);
   }
 
+  async duplicateMany(
+    userId: string,
+    ids: string[],
+  ): Promise<RecipeResponseDto[]> {
+    const recipes = await this.recipeRepo.find({
+      where: ids.map((id) => ({ id })),
+    });
+
+    const foundIds = new Set(recipes.map((r) => r.id));
+    const missing = ids.filter((id) => !foundIds.has(id));
+    if (missing.length) {
+      throw new NotFoundException(`Recipes not found: ${missing.join(', ')}`);
+    }
+
+    const notOwned = recipes.filter((r) => r.userId !== userId);
+    if (notOwned.length) {
+      throw new ForbiddenException();
+    }
+
+    const copies = recipes.map((recipe) =>
+      this.recipeRepo.create({
+        title: `${recipe.title} (copy)`,
+        source: recipe.source,
+        text: recipe.text,
+        originalInput: recipe.originalInput,
+        userId,
+        ingredients: recipe.ingredients.map((ing, index) =>
+          this.ingredientRepo.create({
+            name: ing.name,
+            quantity: ing.quantity,
+            unit: ing.unit,
+            note: ing.note,
+            categoryId: ing.categoryId,
+            position: index,
+          }),
+        ),
+      }),
+    );
+
+    const saved = await this.recipeRepo.save(copies);
+
+    this.logger.info(
+      { originalIds: ids, newIds: saved.map((c) => c.id) },
+      'Recipes duplicated',
+    );
+
+    return saved.map((c) => RecipeResponseDto.fromEntity(c));
+  }
+
   async delete(userId: string, id: string): Promise<void> {
     const recipe = await this.recipeRepo.findOne({ where: { id } });
 

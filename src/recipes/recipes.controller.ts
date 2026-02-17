@@ -45,6 +45,7 @@ import {
   SuggestRecipeResponseDto,
 } from './dto/suggest-recipe.dto';
 import {
+  DuplicateRecipesDto,
   RecipeIngredientItemDto,
   SaveRecipeDto,
   UpdateRecipeDto,
@@ -132,6 +133,25 @@ export class RecipesController {
         RecipeListItemDto.fromEntity(r),
       ) as unknown as Recipe[],
     };
+  }
+
+  @Post('duplicate')
+  @ApiOperation({
+    summary: 'Duplicate recipes',
+    description:
+      'Creates independent copies of the specified recipes. Useful when user wants to modify a recipe without affecting other meal plans.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Recipes duplicated successfully',
+    type: [RecipeResponseDto],
+  })
+  @ApiResponse({ status: 404, description: 'One or more recipes not found' })
+  async duplicateRecipes(
+    @CurrentUser() user: User,
+    @Body(new ValidationPipe()) dto: DuplicateRecipesDto,
+  ): Promise<RecipeResponseDto[]> {
+    return await this.recipesService.duplicateMany(user.id, dto.ids);
   }
 
   @Get(':id')

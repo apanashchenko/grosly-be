@@ -198,6 +198,19 @@ export class UpdateRecipeDto {
   ingredients?: RecipeIngredientItemDto[];
 }
 
+export class DuplicateRecipesDto {
+  @ApiProperty({
+    description: 'Array of recipe UUIDs to duplicate',
+    example: ['f47ac10b-58cc-4372-a567-0e02b2c3d479'],
+    type: [String],
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(20)
+  @IsUUID('4', { each: true, message: 'Each id must be a valid UUID' })
+  ids: string[];
+}
+
 export class UpdateRecipeIngredientDto {
   @ApiPropertyOptional({
     description: 'Ingredient name',
