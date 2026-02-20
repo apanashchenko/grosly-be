@@ -18,6 +18,7 @@ import { JwtPayload } from './strategies/jwt.strategy';
 @Injectable()
 export class AuthService {
   private googleClient: OAuth2Client;
+  private googleAudience: string[];
   private refreshTokenExpiration: string;
 
   constructor(
@@ -30,9 +31,11 @@ export class AuthService {
     @InjectRepository(SpaceInvitation)
     private readonly invitationRepo: Repository<SpaceInvitation>,
   ) {
-    this.googleClient = new OAuth2Client(
-      this.configService.get<string>('GOOGLE_CLIENT_ID'),
-    );
+    const webClientId = this.configService.get<string>('GOOGLE_CLIENT_ID')!;
+    const iosClientId = this.configService.get<string>('GOOGLE_IOS_CLIENT_ID');
+
+    this.googleClient = new OAuth2Client(webClientId);
+    this.googleAudience = [webClientId, ...(iosClientId ? [iosClientId] : [])];
     this.refreshTokenExpiration =
       this.configService.get<string>('JWT_REFRESH_EXPIRATION') || '7d';
   }
@@ -159,7 +162,7 @@ export class AuthService {
     try {
       const ticket = await this.googleClient.verifyIdToken({
         idToken,
-        audience: this.configService.get<string>('GOOGLE_CLIENT_ID'),
+        audience: this.googleAudience,
       });
 
       const payload = ticket.getPayload();
